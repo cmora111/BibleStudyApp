@@ -1,0 +1,4 @@
+book,chapter,verse,action,replacement_tokens,position_override,notes
+1samuel,2,29,retokenize,Why|then|do|you|scorn|my|sacrifices|and|my|offerings|that|I|commanded|,|and|honor|your|sons|above|me|by|fattening|yourselves|on|the|choicest|parts|of|every|offering|of|my|people|Israel|?,,
+numbers,4,48,retokenize,those|listed|were|8|,|580|.,,
+genesis,6,15,manual_map,,29=G520|30=G7970,optional: improves tagging, not mismatch count

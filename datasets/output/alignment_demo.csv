@@ -1,0 +1,5 @@
+translation,book,chapter,verse,token_index,token_text,strongs_id,lemma,morph,source_lang,source_surface
+esv,romans,8,28,2,know,G1492,oida,V-RAI-1P,grc,οἴδαμεν
+esv,romans,8,28,7,love,G25,agapao,V-PAP-DPM,grc,ἀγαπῶσιν
+esv,romans,8,28,8,God,G2316,theos,N-ASM,grc,θεόν
+esv,romans,8,28,11,work,G4903,synergeo,V-PAI-3S,grc,συνεργεῖ

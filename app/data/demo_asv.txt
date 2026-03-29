@@ -1,0 +1,3 @@
+john|3|16|For God so loved the world, that he gave his only begotten Son.|G1063 G2316 G25 G2889 G1325 G3439 G5207
+romans|8|28|And we know that to them that love God all things work together for good.|G1492 G3956 G4903 G18 G25 G2316
+hebrews|11|1|Now faith is assurance of things hoped for, a conviction of things not seen.|G4102 G5287 G1679

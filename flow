@@ -1,0 +1,22 @@
+ESV.pdf
+   ↓
+mutool draw -F txt -o esv_raw.txt ESV.pdf
+   ↓
+convert_esv_clean_pdf.py
+   ↓
+esv.csv
+   ↓
+import_bible_dataset.py
+   ↓
+bible.db
+
+    or
+
+ESV.pdf
+   ↓
+python scripts/import_esv_pdf.py
+   ↓
+(Verify)
+sqlite3 ~/UltimateBibleApp/data/bible.db \
+"SELECT COUNT(*) FROM verses WHERE translation='esv';"
+

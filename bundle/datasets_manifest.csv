@@ -1,0 +1,2 @@
+category,name,license_or_status,source_page,download_url,expected_output
+bible,WEB,Public Domain,https://ebible.org/eng-web/,https://ebible.org/eng-web/webtxt.zip,bibles/web.csv

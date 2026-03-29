@@ -1,0 +1,83 @@
+*** Begin Patch
+*** Update File: app/ui/main_window.py
+@@
+     def _show_strongs_preview(self, strongs_id: str):
+         engine = self.get_strongs_engine()
+         result = engine.study_code(strongs_id)
+         if result.entry:
+             self.status_var.set(f"{result.entry.strongs_id}: {getattr(result.entry, 'gloss', '')}")
++
++    def on_strongs_hover_enter(self, strongs_id: str):
++        try:
++            engine = self.get_strongs_engine()
++            result = engine.study_code(strongs_id)
++            if result and result.entry:
++                entry = result.entry
++                gloss = getattr(entry, "gloss", "") or ""
++                lemma = getattr(entry, "lemma", "") or ""
++                self.status_var.set(f"{entry.strongs_id} — {lemma}{(' - ' + gloss) if gloss else ''}")
++            else:
++                self.status_var.set(f"{strongs_id} — no preview available")
++        except Exception:
++            self.status_var.set(f"{strongs_id} — preview error")
++
++    def on_strongs_hover_leave(self):
++        verse = self.current_verse()
++        if verse:
++            self.status_var.set(f"Loaded {pretty_ref(verse.book, verse.chapter, verse.verse)}")
++        else:
++            self.status_var.set("Ready")
++
++    def show_hover_tooltip(self, text: str, x: int, y: int):
++        self.hide_hover_tooltip()
++        self._hover_tip = tk.Toplevel(self.root)
++        self._hover_tip.wm_overrideredirect(True)
++        self._hover_tip.geometry(f"+{x + 12}+{y + 12}")
++
++        label = tk.Label(
++            self._hover_tip,
++            text=text,
++            justify="left",
++            padx=8,
++            pady=6,
++            relief="solid",
++            borderwidth=1,
++        )
++        label.pack()
++        self._apply_widget_theme(self._hover_tip)
++
++    def hide_hover_tooltip(self):
++        tip = getattr(self, "_hover_tip", None)
++        if tip is not None:
++            try:
++                tip.destroy()
++            except Exception:
++                pass
++            self._hover_tip = None
++
++    def on_strongs_hover_popup(self, event, strongs_id: str):
++        engine = self.get_strongs_engine()
++        result = engine.study_code(strongs_id)
++        if result and result.entry:
++            entry = result.entry
++            lemma = getattr(entry, "lemma", "") or ""
++            gloss = getattr(entry, "gloss", "") or ""
++            text = f"{entry.strongs_id} — {lemma}"
++            if gloss:
++                text += f"\n{gloss}"
++            self.reader.config(cursor="hand2")
++            self.show_hover_tooltip(text, event.x_root, event.y_root)
++            self.on_strongs_hover_enter(strongs_id)
++
++    def on_strongs_hover_popup_leave(self):
++        self.reader.config(cursor="xterm")
++        self.hide_hover_tooltip()
++        self.on_strongs_hover_leave()
+@@
+-                    self.reader.tag_bind(tag, "<Button-1>", lambda e, s=sid: self._show_strongs_popup(s))
+-                    self.reader.tag_bind(tag, "<Enter>", lambda e, s=sid: self._show_strongs_preview(s))
+-                    self.reader.tag_bind(tag, "<Leave>", lambda e: self.status_var.set(f"Loaded {pretty_ref(verse.book, verse.chapter, verse.verse)}"))
++                    self.reader.tag_bind(tag, "<Button-1>", lambda e, s=sid: self._show_strongs_popup(s))
++                    self.reader.tag_bind(tag, "<Enter>", lambda e, s=sid: self.on_strongs_hover_popup(e, s))
++                    self.reader.tag_bind(tag, "<Leave>", lambda e: self.on_strongs_hover_popup_leave())
+*** End Patch

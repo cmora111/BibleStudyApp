@@ -1,0 +1,16 @@
+genesis|1|1|In the beginning God created the heaven and the earth.|H7225 H430 H1254 H8064 H776
+genesis|50|20|But as for you, ye thought evil against me; but God meant it unto good.|H859 H2803 H7451 H430 H2803 H2896
+psalms|23|1|The LORD is my shepherd; I shall not want.|H3068 H7462 H3808 H2637
+isaiah|53|5|But he was wounded for our transgressions, he was bruised for our iniquities.|H2490 H6588 H1792 H5771
+matthew|5|44|But I say unto you, Love your enemies, bless them that curse you.|G25 G2190 G2127 G2672
+john|3|16|For God so loved the world, that he gave his only begotten Son.|G1063 G2316 G25 G2889 G1325 G3439 G5207
+john|14|6|Jesus saith unto him, I am the way, the truth, and the life.|G2424 G3004 G1473 G1510 G3598 G225 G2222
+acts|2|38|Repent, and be baptized every one of you in the name of Jesus Christ.|G3340 G907 G3686 G2424 G5547
+romans|5|8|But God commendeth his love toward us, in that, while we were yet sinners, Christ died for us.|G2316 G4921 G26 G268 G266 G5547 G599
+romans|8|28|And we know that all things work together for good to them that love God.|G1492 G3956 G4903 G18 G25 G2316
+1corinthians|13|4|Charity suffereth long, and is kind.|G26 G3114 G5541
+ephesians|2|8|For by grace are ye saved through faith.|G5485 G4982 G4102
+hebrews|11|1|Now faith is the substance of things hoped for.|G4102 G5287 G1679
+james|1|2|Count it all joy when ye fall into divers temptations.|G2233 G3956 G5479 G3986
+1peter|5|10|But the God of all grace, who hath called us unto his eternal glory.|G2316 G3956 G5485 G2564 G166 G1391
+1john|4|9|In this was manifested the love of God toward us.|G5319 G26 G2316

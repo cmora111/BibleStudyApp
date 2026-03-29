@@ -1,0 +1,31 @@
+{
+  "base": "/home/mora/Bible/BibleStudyApp/ultimate_bible_app_v7/output",
+  "downloads": [
+    {
+      "dataset": "scrollmapper",
+      "archive": "/home/mora/Bible/BibleStudyApp/ultimate_bible_app_v7/output/downloads/scrollmapper_bible_databases.zip",
+      "extracted": "/home/mora/Bible/BibleStudyApp/ultimate_bible_app_v7/output/tmp/scrollmapper_bible_databases"
+    },
+    {
+      "dataset": "stepbible",
+      "archive": "/home/mora/Bible/BibleStudyApp/ultimate_bible_app_v7/output/downloads/stepbible_data.zip",
+      "extracted": "/home/mora/Bible/BibleStudyApp/ultimate_bible_app_v7/output/tmp/stepbible_data"
+    },
+    {
+      "dataset": "morphhb",
+      "archive": "/home/mora/Bible/BibleStudyApp/ultimate_bible_app_v7/output/downloads/morphhb.zip",
+      "extracted": "/home/mora/Bible/BibleStudyApp/ultimate_bible_app_v7/output/tmp/morphhb"
+    },
+    {
+      "dataset": "morphgnt",
+      "archive": "/home/mora/Bible/BibleStudyApp/ultimate_bible_app_v7/output/downloads/morphgnt_sblgnt.zip",
+      "extracted": "/home/mora/Bible/BibleStudyApp/ultimate_bible_app_v7/output/tmp/morphgnt_sblgnt"
+    },
+    {
+      "dataset": "geocoding",
+      "archive": "/home/mora/Bible/BibleStudyApp/ultimate_bible_app_v7/output/downloads/bible_geocoding.zip",
+      "extracted": "/home/mora/Bible/BibleStudyApp/ultimate_bible_app_v7/output/tmp/bible_geocoding"
+    }
+  ],
+  "free_space_gb": 1103.86
+}

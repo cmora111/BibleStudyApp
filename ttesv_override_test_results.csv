@@ -1,0 +1,5 @@
+book,chapter,verse,action,delta,mismatches,outcome,notes
+1samuel,2,29,retokenize,-1,35,improved,
+numbers,4,48,retokenize,-1,35,improved,
+genesis,6,15,manual_map,0,36,unchanged,
+numbers,26,37,retokenize,0,36,unchanged,|500|.|These|are|the|sons|of|Joseph|according|to|their|clans|.

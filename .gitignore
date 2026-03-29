@@ -1,0 +1,24 @@
+.venv/
+# Generated / downloaded data
+output/downloads/
+output/tmp/
+exports/
+cache/
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated maps / html exports
+*.html
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.7z
+
+# Python
+__pycache__/
+*.pyc

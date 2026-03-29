@@ -1,0 +1,8 @@
+book,chapter,verse,action,replacement_tokens,position_override,notes
+genesis,24,62,retokenize,Now|Isaac|had|returned|from|Beer|lahai|roi|and|was|dwelling|in|the|Negeb|.,,
+genesis,6,15,manual_map,,29=G520|30=G7970,
+genesis,29,10,retokenize,Now|as|soon|as|Jacob|saw|Rachel|the|daughter|of|Laban|his|mother's|brother|,|and|the|sheep|of|Laban|his|mother's|brother|,|Jacob|came|near|and|rolled|the|stone|from|the|well's|mouth|and|watered|the|flock|of|Laban|his|mother's|brother|.,,
+numbers,4,48,retokenize,those|listed|were|8|,|580|.,,
+genesis,31,33,retokenize,So|Laban|went|into|Jacob's|tent|and|into|Leah's|tent|and|into|the|tent|of|the|two|female|servants|,|but|he|did|not|find|them|.|And|he|went|out|of|Leah's|tent|and|entered|Rachel's|.,,
+1samuel,2,29,retokenize,Why|then|do|you|scorn|my|sacrifices|and|my|offerings|that|I|commanded|,|and|honor|your|sons|above|me|by|fattening|yourselves|on|the|choicest|parts|of|every|offering|of|my|people|Israel|?,,
+numbers,26,37,retokenize,These|are|the|clans|of|the|sons|of|Ephraim|as|they|were|listed|,|32|,|500|.|These|are|the|sons|of|Joseph|according|to|their|clans|.,,
