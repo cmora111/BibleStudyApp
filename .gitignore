@@ -1,24 +1,107 @@
-.venv/
-# Generated / downloaded data
+# =========================
+# 🔥 CORE RULE: NO DATASETS
+# =========================
+
+# Downloaded / generated datasets
 output/downloads/
 output/tmp/
-exports/
-cache/
+data/raw/
+data/bundles/
+data/tmp/
 
-# Local databases
+# SQLite / database files (local only)
 *.db
 *.sqlite
 *.sqlite3
 
-# Generated maps / html exports
-*.html
+# =========================
+# 🗺️ MAP + EXPORT OUTPUTS
+# =========================
 
-# Archives
+# Generated maps
+*.html
+exports/
+map_exports/
+
+# Knowledge graph exports
+*.html
+knowledge_graph.html
+
+# =========================
+# ⚡ CACHE + PERFORMANCE
+# =========================
+
+cache/
+*.npz
+*.jsonl
+
+# Semantic embeddings cache
+*embeddings*.npz
+*embeddings*.json
+
+# =========================
+# 📦 LARGE FILE TYPES
+# =========================
+
 *.zip
 *.tar
 *.tar.gz
 *.7z
+*.rar
+*.bin
 
-# Python
+# PDFs (like ESV source)
+*.pdf
+
+# =========================
+# 🧠 MODEL / ML ARTIFACTS
+# =========================
+
+models/
+*.pt
+*.pth
+*.onnx
+
+# =========================
+# 🐍 PYTHON
+# =========================
+
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+.venv/
+venv/
+env/
+
+# =========================
+# 🧪 DEV / DEBUG
+# =========================
+
+*.log
+*.tmp
+*.bak
+
+# =========================
+# 🧰 IDE / OS
+# =========================
+
+.vscode/
+.idea/
+
+.DS_Store
+Thumbs.db
+
+# =========================
+# 🧪 OPTIONAL (uncomment if needed)
+# =========================
+
+# If you generate patches or zips locally:
+# patches/*.zip
+
+# If you store large CSV datasets:
+# *.csv
+
+# If timeline data grows large:
+# data/timeline_events_large.csv
