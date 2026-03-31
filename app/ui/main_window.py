@@ -23,6 +23,9 @@ from app.engines.study_assistant import AIBibleStudyAssistant
 from app.engines.topic_engine import TopicEngine
 from app.engines.timeline_engine import BibleTimelineEngine
 from app.engines.map_engine import BibleMapEngine
+from app.engines.dataset_manager import DatasetManager
+from app.ui.dataset_import_wizard import DatasetImportWizard
+from app.ui.setup_wizard import SetupWizard
 from app.engines.event_graph_bridge import EventGraphBridge
 
 try:
@@ -60,6 +63,7 @@ class UltimateBibleApp:
         self.crossref_engine = CrossReferenceEngine() if CrossReferenceEngine else None
         self.timeline_engine = BibleTimelineEngine("data/timeline_events.csv")
         self.map_engine = BibleMapEngine()
+        self.dataset_manager = DatasetManager(Path.cwd())
         self.event_graph_bridge = EventGraphBridge("data/timeline_events.csv")
 
         self._map_cache = {}
@@ -110,6 +114,9 @@ class UltimateBibleApp:
         file_menu.add_command(label="Import Strong's File", command=self.import_strongs_file)
         file_menu.add_separator()
         file_menu.add_command(label="Rebuild Semantic Index", command=self.rebuild_semantic_index)
+        file_menu.add_separator()
+        file_menu.add_command(label="Open Dataset Import Wizard", command=self.open_dataset_import_wizard)
+        file_menu.add_command(label="Open Setup Wizard", command=self.open_setup_wizard)
         file_menu.add_command(label="Exit", command=self.root.destroy)
         tools_menu.add_command(label="Semantic Search", command=self.run_semantic_search)
         tools_menu.add_command(label="Generate Study Guide", command=self.run_ai_assistant)
@@ -252,6 +259,7 @@ class UltimateBibleApp:
         self.graph_tab = ttk.Frame(self.right_notebook, width=360)
         self.import_tab = ttk.Frame(self.right_notebook, width=360)
         self.timeline_tab = ttk.Frame(self.right_notebook, width=360)
+        self.datasets_tab = ttk.Frame(self.right_notebook, width=360)
 
         self.right_notebook.add(self.study_tab, text="Study Guide")
         self.right_notebook.add(self.crossrefs_tab, text="Cross Refs")
@@ -259,6 +267,7 @@ class UltimateBibleApp:
         self.right_notebook.add(self.commentary_tab, text="Commentary/Strong's")
         self.right_notebook.add(self.graph_tab, text="Knowledge Graph")
         self.right_notebook.add(self.timeline_tab, text="Timeline / Map")
+        self.right_notebook.add(self.datasets_tab, text="Datasets")
         self.right_notebook.add(self.import_tab, text="Import")
 
         self.build_study_tab(self.study_tab)
@@ -267,6 +276,7 @@ class UltimateBibleApp:
         self.build_commentary_tab(self.commentary_tab)
         self.build_graph_tab(self.graph_tab)
         self.build_timeline_tab(self.timeline_tab)
+        self.build_datasets_tab(self.datasets_tab)
         self.build_import_tab(self.import_tab)
 
     def build_study_tab(self, parent: ttk.Frame) -> None:
@@ -411,6 +421,143 @@ class UltimateBibleApp:
         ttk.Button(top, text="Commentary", command=self.generate_commentary).pack(side="left", padx=(6, 0))
         self.commentary_output = tk.Text(frame, wrap="word", height=20)
         self.commentary_output.pack(fill="both", expand=True, padx=6, pady=6)
+
+
+    def open_dataset_import_wizard(self):
+        try:
+            DatasetImportWizard(self.root, self.dataset_manager, on_complete=self.refresh_datasets_panel)
+        except Exception as exc:
+            messagebox.showerror("Dataset Import Wizard", f"Could not open dataset import wizard:\n\n{exc}")
+
+    def open_setup_wizard(self):
+        try:
+            SetupWizard(self.root, self.dataset_manager, on_complete=self.refresh_datasets_panel)
+        except Exception as exc:
+            messagebox.showerror("Setup Wizard", f"Could not open setup wizard:\n\n{exc}")
+
+    def build_datasets_tab(self, parent: ttk.Frame) -> None:
+        frame = ttk.LabelFrame(parent, text="Dataset Manager")
+        frame.pack(fill="both", expand=True, padx=6, pady=6)
+
+        top = ttk.Frame(frame)
+        top.pack(fill="x", padx=6, pady=6)
+
+        ttk.Button(top, text="Refresh", command=self.refresh_datasets_panel).pack(side="left")
+        ttk.Button(top, text="Check Disk", command=self.show_dataset_disk_status).pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="Import Wizard", command=self.open_dataset_import_wizard).pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="Setup Wizard", command=self.open_setup_wizard).pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="Register Local File", command=self.register_dataset_local_file).pack(side="left", padx=(6, 0))
+
+        self.datasets_tree = ttk.Treeview(
+            frame,
+            columns=("label", "category", "installed", "size_mb", "path"),
+            show="headings",
+            height=12,
+        )
+        self.datasets_tree.heading("label", text="Label")
+        self.datasets_tree.heading("category", text="Category")
+        self.datasets_tree.heading("installed", text="Installed")
+        self.datasets_tree.heading("size_mb", text="Size MB")
+        self.datasets_tree.heading("path", text="Path")
+        self.datasets_tree.column("label", width=180, anchor="w")
+        self.datasets_tree.column("category", width=110, anchor="w")
+        self.datasets_tree.column("installed", width=80, anchor="center")
+        self.datasets_tree.column("size_mb", width=80, anchor="e")
+        self.datasets_tree.column("path", width=320, anchor="w")
+        self.datasets_tree.pack(fill="both", expand=True, padx=6, pady=(0, 6))
+        self.datasets_tree.bind("<<TreeviewSelect>>", lambda e: self.show_selected_dataset_details())
+
+        self.datasets_status = tk.Text(frame, wrap="word", height=10)
+        self.datasets_status.pack(fill="both", expand=False, padx=6, pady=(0, 6))
+
+        self.refresh_datasets_panel()
+
+    def refresh_datasets_panel(self) -> None:
+        if not hasattr(self, "datasets_tree"):
+            return
+
+        for item in self.datasets_tree.get_children():
+            self.datasets_tree.delete(item)
+
+        rows = self.dataset_manager.installed_items()
+        self._dataset_rows_by_key = {row["key"]: row for row in rows}
+
+        for row in rows:
+            self.datasets_tree.insert(
+                "",
+                "end",
+                iid=row["key"],
+                values=(
+                    row["label"],
+                    row["category"],
+                    "Yes" if row["exists"] else "No",
+                    row["size_mb"],
+                    row["path"],
+                ),
+            )
+
+        self.datasets_status.delete("1.0", "end")
+        self.datasets_status.insert("end", "Dataset catalog refreshed.\n\n")
+        for row in rows:
+            self.datasets_status.insert(
+                "end",
+                f"- {row['label']}: {'installed' if row['exists'] else 'missing'} ({row['size_mb']} MB)\n",
+            )
+
+    def show_selected_dataset_details(self) -> None:
+        if not hasattr(self, "datasets_tree"):
+            return
+
+        sel = self.datasets_tree.selection()
+        if not sel:
+            return
+
+        key = sel[0]
+        row = getattr(self, "_dataset_rows_by_key", {}).get(key)
+        if not row:
+            return
+
+        item = self.dataset_manager.get_item(key)
+        self.datasets_status.delete("1.0", "end")
+        self.datasets_status.insert("end", f"{item.label}\n\n")
+        self.datasets_status.insert("end", f"Key: {item.key}\n")
+        self.datasets_status.insert("end", f"Category: {item.category}\n")
+        self.datasets_status.insert("end", f"Installed: {'Yes' if row['exists'] else 'No'}\n")
+        self.datasets_status.insert("end", f"Size MB: {row['size_mb']}\n")
+        self.datasets_status.insert("end", f"Path: {row['path']}\n\n")
+        self.datasets_status.insert("end", f"{item.description}\n")
+
+    def show_dataset_disk_status(self) -> None:
+        disk = self.dataset_manager.free_disk_space()
+        self.datasets_status.delete("1.0", "end")
+        self.datasets_status.insert("end", "Disk Status\n\n")
+        self.datasets_status.insert("end", f"Path: {disk['path']}\n")
+        self.datasets_status.insert("end", f"Total GB: {disk['total_gb']}\n")
+        self.datasets_status.insert("end", f"Free GB: {disk['free_gb']}\n")
+
+    def register_dataset_local_file(self) -> None:
+        if not hasattr(self, "datasets_tree"):
+            return
+
+        sel = self.datasets_tree.selection()
+        if not sel:
+            messagebox.showinfo("Dataset Manager", "Select a dataset row first.")
+            return
+
+        key = sel[0]
+        item = self.dataset_manager.get_item(key)
+        local_file = filedialog.askopenfilename(title=f"Select local file for {item.label}")
+        if not local_file:
+            return
+
+        try:
+            self.dataset_manager.register_local_file(key, local_file, copy_into_target=True)
+        except Exception as exc:
+            messagebox.showerror("Dataset Manager", f"Could not register dataset:\n\n{exc}")
+            return
+
+        self.refresh_datasets_panel()
+        self.datasets_status.insert("end", f"\nRegistered dataset for {item.label}.\n")
 
     def build_import_tab(self, parent: ttk.Frame) -> None:
         frame = ttk.LabelFrame(parent, text="Licensed Dataset Import")
