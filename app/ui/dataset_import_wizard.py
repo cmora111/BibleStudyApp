@@ -2,13 +2,39 @@ from __future__ import annotations
 
 from pathlib import Path
 import csv
+import re
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 
+BOOK_MAP = {
+    "Gen": "genesis", "Exod": "exodus", "Lev": "leviticus", "Num": "numbers", "Deut": "deuteronomy",
+    "Josh": "joshua", "Judg": "judges", "Ruth": "ruth", "1Sam": "1samuel", "2Sam": "2samuel",
+    "1Kgs": "1kings", "2Kgs": "2kings", "1Chr": "1chronicles", "2Chr": "2chronicles", "Ezra": "ezra",
+    "Neh": "nehemiah", "Esth": "esther", "Job": "job", "Ps": "psalms", "Prov": "proverbs",
+    "Eccl": "ecclesiastes", "Song": "songofsolomon", "Isa": "isaiah", "Jer": "jeremiah",
+    "Lam": "lamentations", "Ezek": "ezekiel", "Dan": "daniel", "Hos": "hosea", "Joel": "joel",
+    "Amos": "amos", "Obad": "obadiah", "Jonah": "jonah", "Mic": "micah", "Nah": "nahum",
+    "Hab": "habakkuk", "Zeph": "zephaniah", "Hag": "haggai", "Zech": "zechariah", "Mal": "malachi",
+    "Matt": "matthew", "Mark": "mark", "Luke": "luke", "John": "john", "Acts": "acts",
+    "Rom": "romans", "1Cor": "1corinthians", "2Cor": "2corinthians", "Gal": "galatians",
+    "Eph": "ephesians", "Phil": "philippians", "Col": "colossians", "1Thess": "1thessalonians",
+    "2Thess": "2thessalonians", "1Tim": "1timothy", "2Tim": "2timothy", "Titus": "titus",
+    "Phlm": "philemon", "Heb": "hebrews", "Jas": "james", "1Pet": "1peter", "2Pet": "2peter",
+    "1John": "1john", "2John": "2john", "3John": "3john", "Jude": "jude", "Rev": "revelation",
+}
+REF_RE = re.compile(r'^(?P<book>[1-3]?[A-Za-z]+)\.(?P<chapter>\d+)\.(?P<verse>\d+)$')
+
+
 class DatasetImportWizard(tk.Toplevel):
     """
-    Fully working Tkinter dataset import wizard.
+    Patched Tkinter dataset import wizard.
+
+    Improvements:
+    - selected dataset/target path shown clearly at top
+    - import button made more visible
+    - cross-reference TXT/TSV can be converted directly to CSV inside the wizard
+    - status/preview updated after browse and conversion
     """
 
     def __init__(self, parent, dataset_manager, on_complete=None):
@@ -18,14 +44,16 @@ class DatasetImportWizard(tk.Toplevel):
         self.on_complete = on_complete
 
         self.title("Dataset Import Wizard")
-        self.geometry("860x620")
-        self.minsize(760, 520)
+        self.geometry("900x680")
+        self.minsize(780, 560)
         self.transient(parent)
         self.grab_set()
         self.lift()
         self.focus_force()
 
         self.dataset_key_var = tk.StringVar()
+        self.dataset_label_var = tk.StringVar(value="No dataset selected")
+        self.target_path_var = tk.StringVar(value="No target path selected")
         self.file_path_var = tk.StringVar()
         self.copy_into_target_var = tk.BooleanVar(value=True)
         self.validation_state_var = tk.StringVar(value="No file selected")
@@ -38,23 +66,27 @@ class DatasetImportWizard(tk.Toplevel):
         outer = ttk.Frame(self, padding=10)
         outer.pack(fill="both", expand=True)
 
-        header = ttk.Label(
+        ttk.Label(
             outer,
             text="Import a local dataset file into the app",
             font=("TkDefaultFont", 12, "bold"),
-        )
-        header.pack(anchor="w", pady=(0, 8))
+        ).pack(anchor="w", pady=(0, 8))
 
-        desc = ttk.Label(
+        ttk.Label(
             outer,
             text=(
-                "Choose a dataset type, select a local file, validate it, "
-                "then register it into the app's expected dataset location."
+                "Choose the correct dataset type first. Then browse for a local file, "
+                "validate it, and import it into the target dataset location."
             ),
-            wraplength=780,
+            wraplength=820,
             justify="left",
-        )
-        desc.pack(anchor="w", pady=(0, 12))
+        ).pack(anchor="w", pady=(0, 10))
+
+        summary = ttk.LabelFrame(outer, text="Selected Dataset")
+        summary.pack(fill="x", pady=(0, 10))
+        ttk.Label(summary, textvariable=self.dataset_label_var, font=("TkDefaultFont", 10, "bold")).pack(anchor="w", padx=8, pady=(8, 2))
+        ttk.Label(summary, text="Target path:").pack(anchor="w", padx=8)
+        ttk.Label(summary, textvariable=self.target_path_var, wraplength=820, justify="left").pack(anchor="w", padx=20, pady=(0, 8))
 
         form = ttk.LabelFrame(outer, text="1. Choose Dataset")
         form.pack(fill="x", pady=(0, 10))
@@ -67,7 +99,7 @@ class DatasetImportWizard(tk.Toplevel):
             row1,
             textvariable=self.dataset_key_var,
             state="readonly",
-            width=50,
+            width=54,
         )
         self.dataset_combo.pack(side="left", fill="x", expand=True, padx=(8, 0))
         self.dataset_combo.bind("<<ComboboxSelected>>", lambda e: self._on_dataset_selected())
@@ -86,6 +118,7 @@ class DatasetImportWizard(tk.Toplevel):
 
         ttk.Button(row2, text="Browse...", command=self._browse_file).pack(side="left", padx=(8, 0))
         ttk.Button(row2, text="Validate", command=self.validate_selection).pack(side="left", padx=(8, 0))
+        ttk.Button(row2, text="Convert Crossrefs TXT -> CSV", command=self.convert_crossrefs_txt_to_csv).pack(side="left", padx=(8, 0))
 
         opts = ttk.Frame(source_box)
         opts.pack(fill="x", padx=8, pady=(0, 8))
@@ -96,8 +129,11 @@ class DatasetImportWizard(tk.Toplevel):
         ).pack(anchor="w")
         ttk.Label(
             opts,
-            text="Usually leave this enabled. It copies the selected file into the app's expected dataset path.",
-            wraplength=760,
+            text=(
+                "Usually leave this enabled. For cross references, choose the Cross References dataset first, "
+                "then convert the TXT/TSV file to a CSV and import that CSV."
+            ),
+            wraplength=820,
             justify="left",
         ).pack(anchor="w", pady=(4, 0))
 
@@ -109,14 +145,15 @@ class DatasetImportWizard(tk.Toplevel):
         ttk.Label(status_bar, text="Validation Status:").pack(side="left")
         ttk.Label(status_bar, textvariable=self.validation_state_var).pack(side="left", padx=(8, 0))
 
-        self.preview = tk.Text(preview_box, wrap="word")
+        self.preview = tk.Text(preview_box, wrap="word", height=16)
         self.preview.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
         buttons = ttk.Frame(outer)
         buttons.pack(fill="x")
 
-        ttk.Button(buttons, text="Import Dataset", command=self.import_dataset).pack(side="right")
         ttk.Button(buttons, text="Close", command=self.destroy).pack(side="right", padx=(0, 8))
+        self.import_button = ttk.Button(buttons, text="IMPORT DATASET", command=self.import_dataset)
+        self.import_button.pack(side="right", padx=(0, 8))
 
     def _populate_dataset_choices(self):
         labels = []
@@ -137,10 +174,14 @@ class DatasetImportWizard(tk.Toplevel):
         self.dataset_meta.delete("1.0", "end")
 
         if not self.selected_item:
+            self.dataset_label_var.set("No dataset selected")
+            self.target_path_var.set("No target path selected")
             return
 
         self.dataset_key_var.set(self.selected_item.key)
         target = self.dataset_manager.resolve_path(self.selected_item.target_path)
+        self.dataset_label_var.set(f"{self.selected_item.label} [{self.selected_item.category}]")
+        self.target_path_var.set(str(target))
 
         lines = [
             f"Label: {self.selected_item.label}",
@@ -151,6 +192,8 @@ class DatasetImportWizard(tk.Toplevel):
             f"Description: {self.selected_item.description}",
         ]
         self.dataset_meta.insert("1.0", "\n".join(lines))
+        self.preview.delete("1.0", "end")
+        self.preview.insert("1.0", f"Selected dataset:\n- {self.dataset_label_var.get()}\n- Target path: {target}\n")
 
     def _browse_file(self):
         try:
@@ -179,7 +222,7 @@ class DatasetImportWizard(tk.Toplevel):
             self.file_path_var.set(path)
             self.validation_state_var.set("File selected; not yet validated")
             self.preview.delete("1.0", "end")
-            self.preview.insert("1.0", f"Selected file:\n{path}\n")
+            self.preview.insert("1.0", f"Selected dataset:\n- {self.dataset_label_var.get()}\n- Target path: {self.target_path_var.get()}\n\nSelected file:\n{path}\n")
         else:
             self.validation_state_var.set("Browse canceled")
 
@@ -205,6 +248,9 @@ class DatasetImportWizard(tk.Toplevel):
         suffix = path.suffix.lower()
 
         lines = [
+            f"Selected dataset: {self.dataset_label_var.get()}",
+            f"Target path: {self.target_path_var.get()}",
+            "",
             f"Selected file: {path}",
             f"Size: {size_mb:.2f} MB",
             f"Suffix: {suffix or '(none)'}",
@@ -221,7 +267,7 @@ class DatasetImportWizard(tk.Toplevel):
         elif suffix == ".pdf":
             lines.append("PDF Validation:")
             lines.append("- PDF selected. This wizard can register it, but PDF-to-dataset conversion must happen in your importer pipeline.")
-            lines.append("- Use this for source preservation, not direct Bible-row import.")
+            lines.append("- Use this for source preservation, not direct row import.")
         elif suffix in {".json", ".xml", ".zip"}:
             lines.append("Archive/Structured Validation:")
             lines.append(f"- {suffix} selected. Basic registration is supported.")
@@ -230,12 +276,11 @@ class DatasetImportWizard(tk.Toplevel):
             lines.append("General Validation:")
             lines.append("- Unknown file extension. Registration is still allowed if you know this matches the dataset type.")
 
-        target = self.dataset_manager.resolve_path(self.selected_item.target_path)
         lines.extend(
             [
                 "",
                 "Dataset target path:",
-                f"- {target}",
+                f"- {self.target_path_var.get()}",
                 f"- Copy into target: {'Yes' if self.copy_into_target_var.get() else 'No'}",
             ]
         )
@@ -289,6 +334,148 @@ class DatasetImportWizard(tk.Toplevel):
         for i, line in enumerate(sample_lines[:5], start=1):
             lines.append(f"- Line {i}: {line[:180]}")
         return True, lines
+
+    def _parse_ref(self, ref: str):
+        m = REF_RE.match((ref or "").strip())
+        if not m:
+            raise ValueError(f"Unsupported verse format: {ref}")
+        book_token = m.group("book")
+        chapter = int(m.group("chapter"))
+        verse = int(m.group("verse"))
+        book = BOOK_MAP.get(book_token)
+        if not book:
+            raise ValueError(f"Unknown book token: {book_token}")
+        return book, chapter, verse
+
+    def _parse_ref_or_range(self, value: str):
+        value = (value or "").strip()
+        if "-" in value:
+            left, right = value.split("-", 1)
+            sb, sc, sv = self._parse_ref(left)
+            eb, ec, ev = self._parse_ref(right)
+            return {
+                "book_start": sb, "chapter_start": sc, "verse_start": sv,
+                "book_end": eb, "chapter_end": ec, "verse_end": ev,
+                "is_range": True,
+            }
+        b, c, v = self._parse_ref(value)
+        return {
+            "book_start": b, "chapter_start": c, "verse_start": v,
+            "book_end": b, "chapter_end": c, "verse_end": v,
+            "is_range": False,
+        }
+
+    def convert_crossrefs_txt_to_csv(self):
+        if not self.selected_item:
+            messagebox.showinfo("Crossrefs Conversion", "Choose a dataset first.", parent=self)
+            return
+
+        if "cross" not in self.selected_item.label.lower():
+            messagebox.showwarning(
+                "Crossrefs Conversion",
+                "You currently have a non-crossrefs dataset selected.\n\n"
+                "Select the Cross References dataset first so the target path is correct.",
+                parent=self,
+            )
+            return
+
+        raw = self.file_path_var.get().strip()
+        if not raw:
+            messagebox.showinfo("Crossrefs Conversion", "Browse for the cross references TXT/TSV file first.", parent=self)
+            return
+
+        input_path = Path(raw).expanduser()
+        if not input_path.exists():
+            messagebox.showerror("Crossrefs Conversion", f"Input file not found:\n\n{input_path}", parent=self)
+            return
+
+        output_default = self.dataset_manager.resolve_path(self.selected_item.target_path)
+        output_path_str = filedialog.asksaveasfilename(
+            parent=self,
+            title="Save converted crossrefs CSV",
+            initialfile=output_default.name,
+            initialdir=str(output_default.parent),
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not output_path_str:
+            return
+
+        output_path = Path(output_path_str).expanduser()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        converted = 0
+        skipped = 0
+        try:
+            with input_path.open("r", encoding="utf-8", errors="replace", newline="") as src, \
+                 output_path.open("w", encoding="utf-8", newline="") as dst:
+
+                reader = csv.DictReader(src, delimiter="\t")
+                fieldnames = [
+                    "source_ref",
+                    "source_book",
+                    "source_chapter",
+                    "source_verse",
+                    "target_ref",
+                    "target_book_start",
+                    "target_chapter_start",
+                    "target_verse_start",
+                    "target_book_end",
+                    "target_chapter_end",
+                    "target_verse_end",
+                    "target_is_range",
+                    "votes",
+                ]
+                writer = csv.DictWriter(dst, fieldnames=fieldnames)
+                writer.writeheader()
+
+                for row in reader:
+                    try:
+                        from_ref = (row.get("From Verse") or "").strip()
+                        to_ref = (row.get("To Verse") or "").strip()
+                        votes_raw = (row.get("Votes") or "0").strip()
+
+                        source_book, source_chapter, source_verse = self._parse_ref(from_ref)
+                        target = self._parse_ref_or_range(to_ref)
+
+                        writer.writerow(
+                            {
+                                "source_ref": from_ref,
+                                "source_book": source_book,
+                                "source_chapter": source_chapter,
+                                "source_verse": source_verse,
+                                "target_ref": to_ref,
+                                "target_book_start": target["book_start"],
+                                "target_chapter_start": target["chapter_start"],
+                                "target_verse_start": target["verse_start"],
+                                "target_book_end": target["book_end"],
+                                "target_chapter_end": target["chapter_end"],
+                                "target_verse_end": target["verse_end"],
+                                "target_is_range": int(target["is_range"]),
+                                "votes": int(votes_raw),
+                            }
+                        )
+                        converted += 1
+                    except Exception:
+                        skipped += 1
+        except Exception as exc:
+            messagebox.showerror("Crossrefs Conversion", f"Could not convert crossrefs file:\n\n{exc}", parent=self)
+            return
+
+        self.file_path_var.set(str(output_path))
+        self.validation_state_var.set("Crossrefs converted to CSV")
+        self.preview.delete("1.0", "end")
+        self.preview.insert(
+            "1.0",
+            f"Crossrefs conversion complete.\n\n"
+            f"Selected dataset: {self.dataset_label_var.get()}\n"
+            f"Target path: {self.target_path_var.get()}\n\n"
+            f"Input: {input_path}\n"
+            f"Output CSV: {output_path}\n"
+            f"Converted rows: {converted}\n"
+            f"Skipped rows: {skipped}\n\n"
+            f"You can now click IMPORT DATASET to register this CSV into the dataset target path.",
+        )
 
     def import_dataset(self):
         if not self.validate_selection():
