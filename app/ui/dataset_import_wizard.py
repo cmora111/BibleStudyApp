@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,22 +9,6 @@ from tkinter import filedialog, messagebox, ttk
 class DatasetImportWizard(tk.Toplevel):
     """
     Fully working Tkinter dataset import wizard.
-
-    Expected integration:
-        from app.ui.dataset_import_wizard import DatasetImportWizard
-        DatasetImportWizard(self.root, self.dataset_manager)
-
-    Requirements for dataset_manager:
-        - catalog (list of DatasetItem-like objects with key, label, category, description, target_path)
-        - get_item(key)
-        - register_local_file(key, local_source, copy_into_target=True)
-
-    This wizard:
-        - lets the user choose a dataset type from the catalog
-        - lets the user browse for a local file
-        - validates the selected file with lightweight checks
-        - previews basic file info
-        - registers/copies the file into the dataset manager target path
     """
 
     def __init__(self, parent, dataset_manager, on_complete=None):
@@ -39,6 +22,8 @@ class DatasetImportWizard(tk.Toplevel):
         self.minsize(760, 520)
         self.transient(parent)
         self.grab_set()
+        self.lift()
+        self.focus_force()
 
         self.dataset_key_var = tk.StringVar()
         self.file_path_var = tk.StringVar()
@@ -99,7 +84,7 @@ class DatasetImportWizard(tk.Toplevel):
         self.file_entry = ttk.Entry(row2, textvariable=self.file_path_var)
         self.file_entry.pack(side="left", fill="x", expand=True)
 
-        ttk.Button(row2, text="Browse…", command=self._browse_file).pack(side="left", padx=(8, 0))
+        ttk.Button(row2, text="Browse...", command=self._browse_file).pack(side="left", padx=(8, 0))
         ttk.Button(row2, text="Validate", command=self.validate_selection).pack(side="left", padx=(8, 0))
 
         opts = ttk.Frame(source_box)
@@ -168,20 +153,35 @@ class DatasetImportWizard(tk.Toplevel):
         self.dataset_meta.insert("1.0", "\n".join(lines))
 
     def _browse_file(self):
-        path = filedialog.askopenfilename(
-            title="Select dataset file",
-            filetypes=[
-                ("Supported", "*.csv *.txt *.tsv *.pdf *.json *.xml *.zip"),
-                ("CSV files", "*.csv"),
-                ("Text files", "*.txt *.tsv"),
-                ("PDF files", "*.pdf"),
-                ("All files", "*.*"),
-            ],
-        )
+        try:
+            self.lift()
+            self.focus_force()
+            self.update_idletasks()
+            path = filedialog.askopenfilename(
+                parent=self,
+                title="Select dataset file",
+                filetypes=[
+                    ("Supported", "*.csv *.txt *.tsv *.pdf *.json *.xml *.zip"),
+                    ("CSV files", "*.csv"),
+                    ("Text files", "*.txt *.tsv"),
+                    ("PDF files", "*.pdf"),
+                    ("All files", "*.*"),
+                ],
+            )
+        except Exception as exc:
+            messagebox.showerror("Dataset Import Wizard", f"Could not open file picker:\n\n{exc}", parent=self)
+            return
+
+        self.lift()
+        self.focus_force()
+
         if path:
             self.file_path_var.set(path)
             self.validation_state_var.set("File selected; not yet validated")
             self.preview.delete("1.0", "end")
+            self.preview.insert("1.0", f"Selected file:\n{path}\n")
+        else:
+            self.validation_state_var.set("Browse canceled")
 
     def validate_selection(self):
         self.preview.delete("1.0", "end")
