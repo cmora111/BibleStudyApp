@@ -424,15 +424,25 @@ class UltimateBibleApp:
 
 
     def _safe_open_strongs_code(self, code: str):
-        code = str(code or "").strip()
+        code = str(code or "").strip().upper()
         if not code:
             return
         if code.isdigit():
             code = f"G{code}"
+
         try:
-            self.open_strongs_code(code)
+            result = self.strongs_engine.study_code(code)
         except Exception as exc:
-            messagebox.showerror("Strong's Lookup", f"Could not open Strong's code {code}:\n\n{exc}")
+            try:
+                messagebox.showerror("Strong's Lookup", f"Could not open Strong's code {code}:
+
+{exc}")
+            except Exception:
+                pass
+            return
+
+        self.show_strongs_result_popup(code, result)
+
 
     def refresh_after_dataset_change(self):
         try:
@@ -719,6 +729,13 @@ class UltimateBibleApp:
         except Exception:
             return None
 
+    def _bind_reader_strongs_tag(self, tag: str, code: str):
+        self.reader.tag_configure(tag, foreground="blue", underline=True)
+        self.reader.tag_bind(tag, "<Button-1>", lambda e, c=code: self._safe_open_strongs_code(str(c)))
+        self.reader.tag_bind(tag, "<Enter>", lambda e: self.reader.config(cursor="hand2"))
+        self.reader.tag_bind(tag, "<Leave>", lambda e: self.reader.config(cursor="xterm"))
+
+
     def _insert_clickable_words(self, text: str, strongs_blob: str, verse=None):
         """
         Render verse text with inline clickable Strong's links.
@@ -829,10 +846,7 @@ class UltimateBibleApp:
                 end_idx = self.reader.index(f"{start_idx} + {len(label)}c")
                 tag = f"top_strongs_{idx}_{code}"
                 self.reader.tag_add(tag, start_idx, end_idx)
-                self.reader.tag_config(tag, foreground="#1d4ed8", underline=True)
-                self.reader.tag_bind(tag, "<Button-1>", lambda e, c=code: self._safe_open_strongs_code(str(c)))
-                self.reader.tag_bind(tag, "<Enter>", lambda e: self.reader.config(cursor="hand2"))
-                self.reader.tag_bind(tag, "<Leave>", lambda e: self.reader.config(cursor="xterm"))
+                self._bind_reader_strongs_tag(tag, code)
                 if idx < min(len(clickable), 20) - 1:
                     self.reader.insert("end", "  •  ")
                 else:
