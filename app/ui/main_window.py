@@ -423,15 +423,61 @@ class UltimateBibleApp:
         self.commentary_output.pack(fill="both", expand=True, padx=6, pady=6)
 
 
+    def _safe_open_strongs_code(self, code: str):
+        code = str(code or "").strip()
+        if not code:
+            return
+        if code.isdigit():
+            code = f"G{code}"
+        try:
+            self.open_strongs_code(code)
+            return
+        except Exception:
+            pass
+        try:
+            result = self.strongs_engine.study_code(code)
+        except Exception as exc:
+            messagebox.showerror("Strong's Lookup", f"Could not open Strong's code {code}:\n\n{exc}")
+            return
+        self.show_strongs_result_popup(code, result)
+
+    def show_strongs_result_popup(self, code: str, result):
+        win = tk.Toplevel(self.root)
+        win.title(f"Strong's {code}")
+        win.geometry("640x420")
+        txt = tk.Text(win, wrap="word")
+        txt.pack(fill="both", expand=True, padx=8, pady=8)
+        txt.insert("1.0", f"Strong's {code}\n\n{result}")
+        txt.configure(state="disabled")
+
+    def refresh_after_dataset_change(self):
+        try:
+            self.cross_reference_engine = CrossReferenceEngine(self.db)
+        except Exception:
+            pass
+        try:
+            if hasattr(self.cross_reference_engine, "reload"):
+                self.cross_reference_engine.reload()
+        except Exception:
+            pass
+        try:
+            self.refresh_crossrefs_panel()
+        except Exception:
+            pass
+        try:
+            self.refresh_datasets_panel()
+        except Exception:
+            pass
+
     def open_dataset_import_wizard(self):
         try:
-            DatasetImportWizard(self.root, self.dataset_manager, on_complete=self.refresh_datasets_panel)
+            DatasetImportWizard(self.root, self.dataset_manager, on_complete=self.refresh_after_dataset_change)
         except Exception as exc:
             messagebox.showerror("Dataset Import Wizard", f"Could not open dataset import wizard:\n\n{exc}")
 
     def open_setup_wizard(self):
         try:
-            SetupWizard(self.root, self.dataset_manager, on_complete=self.refresh_datasets_panel)
+            SetupWizard(self.root, self.dataset_manager, on_complete=self.refresh_after_dataset_change)
         except Exception as exc:
             messagebox.showerror("Setup Wizard", f"Could not open setup wizard:\n\n{exc}")
 
@@ -719,7 +765,7 @@ class UltimateBibleApp:
                 tag = f"inline_strongs_{i}_{strongs}"
                 self.reader.tag_add(tag, start_idx, end_idx)
                 self.reader.tag_config(tag, foreground="#2563eb", underline=True)
-                self.reader.tag_bind(tag, "<Button-1>", lambda e, c=strongs: self.open_strongs_code(str(c)))
+                self.reader.tag_bind(tag, "<Button-1>", lambda e, c=strongs: self._safe_open_strongs_code(str(c)))
                 self.reader.tag_bind(tag, "<Enter>", lambda e: self.reader.config(cursor="hand2"))
                 self.reader.tag_bind(tag, "<Leave>", lambda e: self.reader.config(cursor="xterm"))
 
@@ -800,7 +846,7 @@ class UltimateBibleApp:
                 tag = f"top_strongs_{idx}_{code}"
                 self.reader.tag_add(tag, start_idx, end_idx)
                 self.reader.tag_config(tag, foreground="#1d4ed8", underline=True)
-                self.reader.tag_bind(tag, "<Button-1>", lambda e, c=code: self.open_strongs_code(str(c)))
+                self.reader.tag_bind(tag, "<Button-1>", lambda e, c=code: self._safe_open_strongs_code(str(c)))
                 self.reader.tag_bind(tag, "<Enter>", lambda e: self.reader.config(cursor="hand2"))
                 self.reader.tag_bind(tag, "<Leave>", lambda e: self.reader.config(cursor="xterm"))
                 if idx < min(len(clickable), 20) - 1:

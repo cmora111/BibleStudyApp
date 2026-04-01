@@ -1,100 +1,86 @@
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass
-from typing import List, Optional
+from pathlib import Path
+import csv
 
-from app.core.config import DB_FILE
 
-
-@dataclass
-class CrossReference:
-    source_book: str
-    source_chapter: int
-    source_verse: int
-    target_book: str
-    target_chapter: int
-    target_verse: int
-    votes: int = 0
-    source_label: str = ""
-    target_label: str = ""
-    note: str = ""
+@dataclass(slots=True)
+class CrossReferenceHit:
+    source_ref: str
+    target_ref: str
+    target_book_start: str
+    target_chapter_start: int
+    target_verse_start: int
+    target_book_end: str
+    target_chapter_end: int
+    target_verse_end: int
+    target_is_range: bool
+    votes: int
 
 
 class CrossReferenceEngine:
-    def __init__(self, db_file: Optional[str] = None):
-        self.db_file = db_file or DB_FILE
-        self._ensure_schema()
+    def __init__(self, db=None, csv_path: str | Path | None = None):
+        self.db = db
+        self.root_dir = Path.cwd()
+        self.csv_path = Path(csv_path) if csv_path else self._discover_csv_path()
+        self._index = {}
+        self._load()
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_file)
-        conn.row_factory = sqlite3.Row
-        return conn
-
-    def _ensure_schema(self) -> None:
-        with self._connect() as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS cross_references (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    source_book TEXT NOT NULL,
-                    source_chapter INTEGER NOT NULL,
-                    source_verse INTEGER NOT NULL,
-                    target_book TEXT NOT NULL,
-                    target_chapter INTEGER NOT NULL,
-                    target_verse INTEGER NOT NULL,
-                    votes INTEGER DEFAULT 0,
-                    source_label TEXT DEFAULT '',
-                    target_label TEXT DEFAULT '',
-                    note TEXT DEFAULT '',
-                    dataset TEXT DEFAULT 'custom',
-                    UNIQUE (
-                        source_book, source_chapter, source_verse,
-                        target_book, target_chapter, target_verse, dataset
-                    )
-                )
-            """)
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_cross_refs_source
-                ON cross_references(source_book, source_chapter, source_verse, votes DESC)
-            """)
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_cross_refs_target
-                ON cross_references(target_book, target_chapter, target_verse)
-            """)
-            conn.commit()
-
-    def get_cross_references(self, book: str, chapter: int, verse: int, limit: int = 50, min_votes: int = 0) -> List[CrossReference]:
-        with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT source_book, source_chapter, source_verse,
-                       target_book, target_chapter, target_verse,
-                       votes, source_label, target_label, note
-                FROM cross_references
-                WHERE source_book=? AND source_chapter=? AND source_verse=? AND votes>=?
-                ORDER BY votes DESC, target_book, target_chapter, target_verse
-                LIMIT ?
-                """,
-                (book, chapter, verse, min_votes, limit),
-            ).fetchall()
-
-        return [
-            CrossReference(
-                source_book=row["source_book"],
-                source_chapter=row["source_chapter"],
-                source_verse=row["source_verse"],
-                target_book=row["target_book"],
-                target_chapter=row["target_chapter"],
-                target_verse=row["target_verse"],
-                votes=row["votes"],
-                source_label=row["source_label"],
-                target_label=row["target_label"],
-                note=row["note"],
-            )
-            for row in rows
+    def _discover_csv_path(self) -> Path | None:
+        candidates = [
+            self.root_dir / "output" / "crossrefs" / "openbible_crossrefs.csv",
+            self.root_dir / "output" / "crossrefs" / "crossrefs.csv",
+            self.root_dir / "output" / "crossrefs" / "ASV.csv",
         ]
+        for path in candidates:
+            if path.exists():
+                return path
+        return None
 
-    def has_data(self) -> bool:
-        with self._connect() as conn:
-            row = conn.execute("SELECT COUNT(*) FROM cross_references").fetchone()
-        return bool(row and row[0] > 0)
+    def _load(self):
+        self._index = {}
+        if not self.csv_path or not Path(self.csv_path).exists():
+            return
+
+        with Path(self.csv_path).open("r", encoding="utf-8", errors="replace", newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                try:
+                    key = (
+                        (row.get("source_book") or "").strip().lower(),
+                        int(row.get("source_chapter") or 0),
+                        int(row.get("source_verse") or 0),
+                    )
+                    if not key[0] or key[1] <= 0 or key[2] <= 0:
+                        continue
+
+                    hit = CrossReferenceHit(
+                        source_ref=(row.get("source_ref") or "").strip(),
+                        target_ref=(row.get("target_ref") or "").strip(),
+                        target_book_start=(row.get("target_book_start") or "").strip().lower(),
+                        target_chapter_start=int(row.get("target_chapter_start") or 0),
+                        target_verse_start=int(row.get("target_verse_start") or 0),
+                        target_book_end=(row.get("target_book_end") or "").strip().lower(),
+                        target_chapter_end=int(row.get("target_chapter_end") or 0),
+                        target_verse_end=int(row.get("target_verse_end") or 0),
+                        target_is_range=bool(int(row.get("target_is_range") or 0)),
+                        votes=int(row.get("votes") or 0),
+                    )
+                    self._index.setdefault(key, []).append(hit)
+                except Exception:
+                    continue
+
+        for key in self._index:
+            self._index[key].sort(key=lambda h: h.votes, reverse=True)
+
+    def reload(self):
+        self.csv_path = self._discover_csv_path()
+        self._load()
+
+    def get_references(self, book: str, chapter: int, verse: int, limit: int = 50):
+        key = ((book or "").strip().lower(), int(chapter), int(verse))
+        return self._index.get(key, [])[:limit]
+
+    def get_reference_labels(self, book: str, chapter: int, verse: int, limit: int = 20):
+        return [hit.target_ref for hit in self.get_references(book, chapter, verse, limit=limit)]
