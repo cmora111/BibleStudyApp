@@ -431,33 +431,17 @@ class UltimateBibleApp:
             code = f"G{code}"
         try:
             self.open_strongs_code(code)
-            return
-        except Exception:
-            pass
-        try:
-            result = self.strongs_engine.study_code(code)
         except Exception as exc:
             messagebox.showerror("Strong's Lookup", f"Could not open Strong's code {code}:\n\n{exc}")
-            return
-        self.show_strongs_result_popup(code, result)
-
-    def show_strongs_result_popup(self, code: str, result):
-        win = tk.Toplevel(self.root)
-        win.title(f"Strong's {code}")
-        win.geometry("640x420")
-        txt = tk.Text(win, wrap="word")
-        txt.pack(fill="both", expand=True, padx=8, pady=8)
-        txt.insert("1.0", f"Strong's {code}\n\n{result}")
-        txt.configure(state="disabled")
 
     def refresh_after_dataset_change(self):
         try:
-            self.cross_reference_engine = CrossReferenceEngine(self.db)
+            self.crossref_engine = CrossReferenceEngine() if CrossReferenceEngine else None
         except Exception:
-            pass
+            self.crossref_engine = None
         try:
-            if hasattr(self.cross_reference_engine, "reload"):
-                self.cross_reference_engine.reload()
+            if self.crossref_engine and hasattr(self.crossref_engine, "reload"):
+                self.crossref_engine.reload()
         except Exception:
             pass
         try:
@@ -896,15 +880,39 @@ class UltimateBibleApp:
 
     def get_crossref_preview_rows_for_current(self):
         rows = []
-        if self.crossref_engine:
-            try:
-                refs = self.crossref_engine.get_cross_references(self.normalize_current_book(), int(self.chapter_var.get()), int(self.verse_var.get()), limit=50)
-            except Exception:
-                refs = []
-            for r in refs:
-                ref_label = f"{r.target_book.title()} {r.target_chapter}:{r.target_verse}"
-                preview_text = self.fetch_verse_text(r.target_book, r.target_chapter, r.target_verse, translation=self.translation_var.get().strip().lower()) or self.fetch_verse_text(r.target_book, r.target_chapter, r.target_verse, translation="esv")
-                rows.append({"ref": ref_label, "votes": r.votes, "text": preview_text or "(verse text unavailable)"})
+        if not self.crossref_engine:
+            return rows
+
+        try:
+            book = self.normalize_current_book()
+            chapter = int(self.chapter_var.get() or 1)
+            verse = int(self.verse_var.get() or 1)
+        except Exception:
+            return rows
+
+        refs = []
+        try:
+            if hasattr(self.crossref_engine, "get_cross_references"):
+                refs = self.crossref_engine.get_cross_references(book, chapter, verse, limit=50)
+            elif hasattr(self.crossref_engine, "get_references"):
+                refs = self.crossref_engine.get_references(book, chapter, verse, limit=50)
+        except Exception:
+            refs = []
+
+        for r in refs:
+            target_book = getattr(r, "target_book", None) or getattr(r, "target_book_start", "")
+            target_chapter = getattr(r, "target_chapter", None) or getattr(r, "target_chapter_start", 0)
+            target_verse = getattr(r, "target_verse", None) or getattr(r, "target_verse_start", 0)
+            target_ref = getattr(r, "target_ref", "") or f"{str(target_book).title()} {target_chapter}:{target_verse}"
+            if not target_book or not target_chapter or not target_verse:
+                continue
+            ref_label = target_ref
+            preview_text = (
+                self.fetch_verse_text(target_book, target_chapter, target_verse, translation=self.translation_var.get().strip().lower())
+                or self.fetch_verse_text(target_book, target_chapter, target_verse, translation="esv")
+                or "(verse text unavailable)"
+            )
+            rows.append({"ref": ref_label, "votes": getattr(r, "votes", 0), "text": preview_text})
         return rows
 
     def open_crossref_preview_window(self, ref_label: str, verse_text: str):
