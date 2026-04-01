@@ -28,13 +28,7 @@ REF_RE = re.compile(r'^(?P<book>[1-3]?[A-Za-z]+)\.(?P<chapter>\d+)\.(?P<verse>\d
 
 class DatasetImportWizard(tk.Toplevel):
     """
-    Patched Tkinter dataset import wizard.
-
-    Improvements:
-    - selected dataset/target path shown clearly at top
-    - import button made more visible
-    - cross-reference TXT/TSV can be converted directly to CSV inside the wizard
-    - status/preview updated after browse and conversion
+    Patched Tkinter dataset import wizard with an always-visible import footer.
     """
 
     def __init__(self, parent, dataset_manager, on_complete=None):
@@ -44,8 +38,8 @@ class DatasetImportWizard(tk.Toplevel):
         self.on_complete = on_complete
 
         self.title("Dataset Import Wizard")
-        self.geometry("900x680")
-        self.minsize(780, 560)
+        self.geometry("920x700")
+        self.minsize(820, 620)
         self.transient(parent)
         self.grab_set()
         self.lift()
@@ -61,72 +55,106 @@ class DatasetImportWizard(tk.Toplevel):
 
         self._build_ui()
         self._populate_dataset_choices()
+        self._sync_import_button_state()
 
     def _build_ui(self):
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
         outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        outer.grid(row=0, column=0, sticky="nsew")
+        outer.grid_rowconfigure(1, weight=1)
+        outer.grid_columnconfigure(0, weight=1)
+
+        header = ttk.Frame(outer)
+        header.grid(row=0, column=0, sticky="ew")
+        header.grid_columnconfigure(0, weight=1)
 
         ttk.Label(
-            outer,
+            header,
             text="Import a local dataset file into the app",
             font=("TkDefaultFont", 12, "bold"),
-        ).pack(anchor="w", pady=(0, 8))
+        ).grid(row=0, column=0, sticky="w", pady=(0, 8))
 
         ttk.Label(
-            outer,
+            header,
             text=(
                 "Choose the correct dataset type first. Then browse for a local file, "
                 "validate it, and import it into the target dataset location."
             ),
+            wraplength=840,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", pady=(0, 10))
+
+        main = ttk.Frame(outer)
+        main.grid(row=1, column=0, sticky="nsew")
+        main.grid_rowconfigure(3, weight=1)
+        main.grid_columnconfigure(0, weight=1)
+
+        summary = ttk.LabelFrame(main, text="Selected Dataset")
+        summary.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        summary.grid_columnconfigure(0, weight=1)
+
+        ttk.Label(
+            summary,
+            textvariable=self.dataset_label_var,
+            font=("TkDefaultFont", 10, "bold")
+        ).grid(row=0, column=0, sticky="w", padx=8, pady=(8, 2))
+
+        ttk.Label(summary, text="Target path:").grid(row=1, column=0, sticky="w", padx=8)
+        ttk.Label(
+            summary,
+            textvariable=self.target_path_var,
             wraplength=820,
             justify="left",
-        ).pack(anchor="w", pady=(0, 10))
+        ).grid(row=2, column=0, sticky="w", padx=20, pady=(0, 8))
 
-        summary = ttk.LabelFrame(outer, text="Selected Dataset")
-        summary.pack(fill="x", pady=(0, 10))
-        ttk.Label(summary, textvariable=self.dataset_label_var, font=("TkDefaultFont", 10, "bold")).pack(anchor="w", padx=8, pady=(8, 2))
-        ttk.Label(summary, text="Target path:").pack(anchor="w", padx=8)
-        ttk.Label(summary, textvariable=self.target_path_var, wraplength=820, justify="left").pack(anchor="w", padx=20, pady=(0, 8))
-
-        form = ttk.LabelFrame(outer, text="1. Choose Dataset")
-        form.pack(fill="x", pady=(0, 10))
+        form = ttk.LabelFrame(main, text="1. Choose Dataset")
+        form.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        form.grid_columnconfigure(0, weight=1)
 
         row1 = ttk.Frame(form)
-        row1.pack(fill="x", padx=8, pady=8)
+        row1.grid(row=0, column=0, sticky="ew", padx=8, pady=8)
+        row1.grid_columnconfigure(1, weight=1)
 
-        ttk.Label(row1, text="Dataset:").pack(side="left")
+        ttk.Label(row1, text="Dataset:").grid(row=0, column=0, sticky="w")
         self.dataset_combo = ttk.Combobox(
             row1,
             textvariable=self.dataset_key_var,
             state="readonly",
             width=54,
         )
-        self.dataset_combo.pack(side="left", fill="x", expand=True, padx=(8, 0))
+        self.dataset_combo.grid(row=0, column=1, sticky="ew", padx=(8, 0))
         self.dataset_combo.bind("<<ComboboxSelected>>", lambda e: self._on_dataset_selected())
 
         self.dataset_meta = tk.Text(form, height=5, wrap="word")
-        self.dataset_meta.pack(fill="x", padx=8, pady=(0, 8))
+        self.dataset_meta.grid(row=1, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8))
 
-        source_box = ttk.LabelFrame(outer, text="2. Select Local File")
-        source_box.pack(fill="x", pady=(0, 10))
+        source_box = ttk.LabelFrame(main, text="2. Select Local File")
+        source_box.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        source_box.grid_columnconfigure(0, weight=1)
 
         row2 = ttk.Frame(source_box)
-        row2.pack(fill="x", padx=8, pady=8)
+        row2.grid(row=0, column=0, sticky="ew", padx=8, pady=8)
+        row2.grid_columnconfigure(0, weight=1)
 
         self.file_entry = ttk.Entry(row2, textvariable=self.file_path_var)
-        self.file_entry.pack(side="left", fill="x", expand=True)
+        self.file_entry.grid(row=0, column=0, sticky="ew")
 
-        ttk.Button(row2, text="Browse...", command=self._browse_file).pack(side="left", padx=(8, 0))
-        ttk.Button(row2, text="Validate", command=self.validate_selection).pack(side="left", padx=(8, 0))
-        ttk.Button(row2, text="Convert Crossrefs TXT -> CSV", command=self.convert_crossrefs_txt_to_csv).pack(side="left", padx=(8, 0))
+        ttk.Button(row2, text="Browse...", command=self._browse_file).grid(row=0, column=1, padx=(8, 0))
+        ttk.Button(row2, text="Validate", command=self.validate_selection).grid(row=0, column=2, padx=(8, 0))
+        ttk.Button(row2, text="Convert Crossrefs TXT -> CSV", command=self.convert_crossrefs_txt_to_csv).grid(row=0, column=3, padx=(8, 0))
 
         opts = ttk.Frame(source_box)
-        opts.pack(fill="x", padx=8, pady=(0, 8))
+        opts.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
+        opts.grid_columnconfigure(0, weight=1)
+
         ttk.Checkbutton(
             opts,
             text="Copy file into dataset target location",
             variable=self.copy_into_target_var,
-        ).pack(anchor="w")
+        ).grid(row=0, column=0, sticky="w")
+
         ttk.Label(
             opts,
             text=(
@@ -135,25 +163,55 @@ class DatasetImportWizard(tk.Toplevel):
             ),
             wraplength=820,
             justify="left",
-        ).pack(anchor="w", pady=(4, 0))
+        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
 
-        preview_box = ttk.LabelFrame(outer, text="3. Validation + Preview")
-        preview_box.pack(fill="both", expand=True, pady=(0, 10))
+        preview_box = ttk.LabelFrame(main, text="3. Validation + Preview")
+        preview_box.grid(row=3, column=0, sticky="nsew", pady=(0, 10))
+        preview_box.grid_rowconfigure(1, weight=1)
+        preview_box.grid_columnconfigure(0, weight=1)
 
         status_bar = ttk.Frame(preview_box)
-        status_bar.pack(fill="x", padx=8, pady=(8, 4))
+        status_bar.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
         ttk.Label(status_bar, text="Validation Status:").pack(side="left")
         ttk.Label(status_bar, textvariable=self.validation_state_var).pack(side="left", padx=(8, 0))
 
-        self.preview = tk.Text(preview_box, wrap="word", height=16)
-        self.preview.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        preview_wrap = ttk.Frame(preview_box)
+        preview_wrap.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
+        preview_wrap.grid_rowconfigure(0, weight=1)
+        preview_wrap.grid_columnconfigure(0, weight=1)
 
-        buttons = ttk.Frame(outer)
-        buttons.pack(fill="x")
+        self.preview = tk.Text(preview_wrap, wrap="word", height=16)
+        self.preview.grid(row=0, column=0, sticky="nsew")
 
-        ttk.Button(buttons, text="Close", command=self.destroy).pack(side="right", padx=(0, 8))
-        self.import_button = ttk.Button(buttons, text="IMPORT DATASET", command=self.import_dataset)
-        self.import_button.pack(side="right", padx=(0, 8))
+        preview_scroll = ttk.Scrollbar(preview_wrap, orient="vertical", command=self.preview.yview)
+        preview_scroll.grid(row=0, column=1, sticky="ns")
+        self.preview.configure(yscrollcommand=preview_scroll.set)
+
+        footer = ttk.Frame(outer, padding=(0, 6, 0, 0))
+        footer.grid(row=2, column=0, sticky="ew")
+        footer.grid_columnconfigure(0, weight=1)
+
+        left_footer = ttk.Frame(footer)
+        left_footer.grid(row=0, column=0, sticky="w")
+        ttk.Label(left_footer, text="Ready to import when dataset and file are selected.").pack(side="left")
+
+        right_footer = ttk.Frame(footer)
+        right_footer.grid(row=0, column=1, sticky="e")
+
+        ttk.Button(right_footer, text="Close", command=self.destroy).pack(side="right", padx=(8, 0))
+        self.import_button = ttk.Button(
+            right_footer,
+            text="IMPORT DATASET",
+            command=self.import_dataset
+        )
+        self.import_button.pack(side="right")
+
+    def _sync_import_button_state(self):
+        state = "normal" if (self.selected_item and self.file_path_var.get().strip()) else "disabled"
+        try:
+            self.import_button.configure(state=state)
+        except Exception:
+            pass
 
     def _populate_dataset_choices(self):
         labels = []
@@ -176,6 +234,7 @@ class DatasetImportWizard(tk.Toplevel):
         if not self.selected_item:
             self.dataset_label_var.set("No dataset selected")
             self.target_path_var.set("No target path selected")
+            self._sync_import_button_state()
             return
 
         self.dataset_key_var.set(self.selected_item.key)
@@ -194,6 +253,7 @@ class DatasetImportWizard(tk.Toplevel):
         self.dataset_meta.insert("1.0", "\n".join(lines))
         self.preview.delete("1.0", "end")
         self.preview.insert("1.0", f"Selected dataset:\n- {self.dataset_label_var.get()}\n- Target path: {target}\n")
+        self._sync_import_button_state()
 
     def _browse_file(self):
         try:
@@ -226,22 +286,27 @@ class DatasetImportWizard(tk.Toplevel):
         else:
             self.validation_state_var.set("Browse canceled")
 
+        self._sync_import_button_state()
+
     def validate_selection(self):
         self.preview.delete("1.0", "end")
 
         if not self.selected_item:
             self.validation_state_var.set("Choose a dataset first")
+            self._sync_import_button_state()
             return False
 
         raw = self.file_path_var.get().strip()
         if not raw:
             self.validation_state_var.set("Choose a local file first")
+            self._sync_import_button_state()
             return False
 
         path = Path(raw).expanduser()
         if not path.exists():
             self.validation_state_var.set("Selected file does not exist")
             self.preview.insert("1.0", f"Missing file: {path}")
+            self._sync_import_button_state()
             return False
 
         size_mb = path.stat().st_size / 1024 / 1024
@@ -287,6 +352,7 @@ class DatasetImportWizard(tk.Toplevel):
 
         self.preview.insert("1.0", "\n".join(lines))
         self.validation_state_var.set("Validation passed" if ok else "Validation has warnings")
+        self._sync_import_button_state()
         return True
 
     def _validate_tabular_text(self, path: Path):
@@ -476,6 +542,7 @@ class DatasetImportWizard(tk.Toplevel):
             f"Skipped rows: {skipped}\n\n"
             f"You can now click IMPORT DATASET to register this CSV into the dataset target path.",
         )
+        self._sync_import_button_state()
 
     def import_dataset(self):
         if not self.validate_selection():
