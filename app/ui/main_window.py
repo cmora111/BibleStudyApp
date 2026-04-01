@@ -434,9 +434,7 @@ class UltimateBibleApp:
             result = self.strongs_engine.study_code(code)
         except Exception as exc:
             try:
-                messagebox.showerror("Strong's Lookup", f"Could not open Strong's code {code}:
-
-{exc}")
+                messagebox.showerror("Strong's Lookup", f"Could not open Strong's code {code}: {exc}")
             except Exception:
                 pass
             return
