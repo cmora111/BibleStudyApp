@@ -23,6 +23,9 @@ from app.engines.study_assistant import AIBibleStudyAssistant
 from app.engines.topic_engine import TopicEngine
 from app.engines.timeline_engine import BibleTimelineEngine
 from app.engines.map_engine import BibleMapEngine
+from app.engines.dataset_manager import DatasetManager
+from app.ui.dataset_import_wizard import DatasetImportWizard
+from app.ui.setup_wizard import SetupWizard
 from app.engines.event_graph_bridge import EventGraphBridge
 
 try:
@@ -60,6 +63,7 @@ class UltimateBibleApp:
         self.crossref_engine = CrossReferenceEngine() if CrossReferenceEngine else None
         self.timeline_engine = BibleTimelineEngine("data/timeline_events.csv")
         self.map_engine = BibleMapEngine()
+        self.dataset_manager = DatasetManager(Path.cwd())
         self.event_graph_bridge = EventGraphBridge("data/timeline_events.csv")
 
         self._map_cache = {}
@@ -68,6 +72,9 @@ class UltimateBibleApp:
         self._graph_nav_menu = None
         self._semantic_search_counter = itertools.count(1)
         self._active_semantic_search_token = 0
+        self._strongs_result_cache = {}
+        self._strongs_tooltip = None
+        self._strongs_popup = None
         self.build_ui()
         self.start_map_callback_server()
         self.root.after(100, self.display_current_verse)
@@ -110,6 +117,9 @@ class UltimateBibleApp:
         file_menu.add_command(label="Import Strong's File", command=self.import_strongs_file)
         file_menu.add_separator()
         file_menu.add_command(label="Rebuild Semantic Index", command=self.rebuild_semantic_index)
+        file_menu.add_separator()
+        file_menu.add_command(label="Open Dataset Import Wizard", command=self.open_dataset_import_wizard)
+        file_menu.add_command(label="Open Setup Wizard", command=self.open_setup_wizard)
         file_menu.add_command(label="Exit", command=self.root.destroy)
         tools_menu.add_command(label="Semantic Search", command=self.run_semantic_search)
         tools_menu.add_command(label="Generate Study Guide", command=self.run_ai_assistant)
@@ -252,6 +262,7 @@ class UltimateBibleApp:
         self.graph_tab = ttk.Frame(self.right_notebook, width=360)
         self.import_tab = ttk.Frame(self.right_notebook, width=360)
         self.timeline_tab = ttk.Frame(self.right_notebook, width=360)
+        self.datasets_tab = ttk.Frame(self.right_notebook, width=360)
 
         self.right_notebook.add(self.study_tab, text="Study Guide")
         self.right_notebook.add(self.crossrefs_tab, text="Cross Refs")
@@ -259,6 +270,7 @@ class UltimateBibleApp:
         self.right_notebook.add(self.commentary_tab, text="Commentary/Strong's")
         self.right_notebook.add(self.graph_tab, text="Knowledge Graph")
         self.right_notebook.add(self.timeline_tab, text="Timeline / Map")
+        self.right_notebook.add(self.datasets_tab, text="Datasets")
         self.right_notebook.add(self.import_tab, text="Import")
 
         self.build_study_tab(self.study_tab)
@@ -267,6 +279,7 @@ class UltimateBibleApp:
         self.build_commentary_tab(self.commentary_tab)
         self.build_graph_tab(self.graph_tab)
         self.build_timeline_tab(self.timeline_tab)
+        self.build_datasets_tab(self.datasets_tab)
         self.build_import_tab(self.import_tab)
 
     def build_study_tab(self, parent: ttk.Frame) -> None:
@@ -412,6 +425,263 @@ class UltimateBibleApp:
         self.commentary_output = tk.Text(frame, wrap="word", height=20)
         self.commentary_output.pack(fill="both", expand=True, padx=6, pady=6)
 
+
+    def _safe_open_strongs_code(self, code: str):
+        code = str(code or "").strip().upper()
+        if not code:
+            return
+        if code.isdigit():
+            code = f"G{code}"
+
+        try:
+            result = self.strongs_engine.study_code(code)
+        except Exception as exc:
+            try:
+                messagebox.showerror("Strong's Lookup", f"Could not open Strong's code {code}: {exc}")
+            except Exception:
+                pass
+            return
+
+        self.show_strongs_result_popup(code, result)
+
+
+    def refresh_after_dataset_change(self):
+        try:
+            self.crossref_engine = CrossReferenceEngine() if CrossReferenceEngine else None
+        except Exception:
+            self.crossref_engine = None
+        try:
+            if self.crossref_engine and hasattr(self.crossref_engine, "reload"):
+                self.crossref_engine.reload()
+        except Exception:
+            pass
+        try:
+            self.refresh_crossrefs_panel()
+        except Exception:
+            pass
+        try:
+            self.refresh_datasets_panel()
+        except Exception:
+            pass
+
+    def _safe_open_strongs_code(self, code: str):
+        code = str(code or "").strip().upper()
+        if not code:
+            return
+        if code.isdigit():
+            code = f"G{code}"
+
+        try:
+            result = self.strongs_engine.study_code(code)
+        except Exception as exc:
+            messagebox.showerror(
+                "Strong's Lookup",
+                f"Could not open Strong's code {code}: {exc}"
+            )
+            return
+
+        self.show_strongs_result_popup(code, result)
+
+    def show_strongs_result_popup(self, code: str, result):
+        win = tk.Toplevel(self.root)
+        win.title(f"Strong's {code}")
+        win.geometry("760x520")
+
+        txt = tk.Text(win, wrap="word")
+        txt.pack(fill="both", expand=True, padx=8, pady=8)
+
+        lines = [f"Strong's {code}", ""]
+
+        entry = getattr(result, "entry", None)
+        if entry:
+            lines.append(f"Lemma: {getattr(entry, 'lemma', '')}")
+            lines.append(f"Transliteration: {getattr(entry, 'transliteration', '')}")
+            lines.append(f"Language: {getattr(entry, 'language', '')}")
+            lines.append(f"Gloss: {getattr(entry, 'gloss', '')}")
+            lines.append(f"Definition: {getattr(entry, 'definition', '')}")
+            lines.append("")
+
+        linked_codes = getattr(result, "linked_codes", None)
+        if linked_codes:
+            lines.append("Linked Codes:")
+            lines.append(", ".join(str(x) for x in linked_codes))
+            lines.append("")
+
+        occurrences = getattr(result, "occurrences", None)
+        if occurrences:
+            lines.append("Occurrences:")
+            for item in occurrences[:20]:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        verse_hits = getattr(result, "verse_hits", None)
+        if verse_hits:
+            lines.append("Verse Hits:")
+            for item in verse_hits[:20]:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        if len(lines) <= 2:
+            lines.append(str(result))
+
+        txt.insert("1.0", "\n".join(lines))
+        txt.configure(state="disabled")
+
+    def _bind_reader_strongs_tag(self, tag: str, code: str):
+        self.reader.tag_configure(tag, foreground="blue", underline=1)
+        self.reader.tag_bind(
+            tag,
+            "<Button-1>",
+            lambda e, c=code: self._safe_open_strongs_code(str(c), event=e)
+        )
+        self.reader.tag_bind(
+            tag,
+            "<Enter>",
+            lambda e: self.reader.config(cursor="hand2")
+        )
+        self.reader.tag_bind(
+            tag,
+            "<Leave>",
+            lambda e: self.reader.config(cursor="xterm")
+        )
+
+
+    def open_dataset_import_wizard(self):
+        try:
+            DatasetImportWizard(self.root, self.dataset_manager, on_complete=self.refresh_after_dataset_change)
+        except Exception as exc:
+            messagebox.showerror("Dataset Import Wizard", f"Could not open dataset import wizard:\n\n{exc}")
+
+    def open_setup_wizard(self):
+        try:
+            SetupWizard(self.root, self.dataset_manager, on_complete=self.refresh_after_dataset_change)
+        except Exception as exc:
+            messagebox.showerror("Setup Wizard", f"Could not open setup wizard:\n\n{exc}")
+
+    def build_datasets_tab(self, parent: ttk.Frame) -> None:
+        frame = ttk.LabelFrame(parent, text="Dataset Manager")
+        frame.pack(fill="both", expand=True, padx=6, pady=6)
+
+        top = ttk.Frame(frame)
+        top.pack(fill="x", padx=6, pady=6)
+
+        ttk.Button(top, text="Refresh", command=self.refresh_datasets_panel).pack(side="left")
+        ttk.Button(top, text="Check Disk", command=self.show_dataset_disk_status).pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="Import Wizard", command=self.open_dataset_import_wizard).pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="Setup Wizard", command=self.open_setup_wizard).pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="Register Local File", command=self.register_dataset_local_file).pack(side="left", padx=(6, 0))
+
+        self.datasets_tree = ttk.Treeview(
+            frame,
+            columns=("label", "category", "installed", "size_mb", "path"),
+            show="headings",
+            height=12,
+        )
+        self.datasets_tree.heading("label", text="Label")
+        self.datasets_tree.heading("category", text="Category")
+        self.datasets_tree.heading("installed", text="Installed")
+        self.datasets_tree.heading("size_mb", text="Size MB")
+        self.datasets_tree.heading("path", text="Path")
+        self.datasets_tree.column("label", width=180, anchor="w")
+        self.datasets_tree.column("category", width=110, anchor="w")
+        self.datasets_tree.column("installed", width=80, anchor="center")
+        self.datasets_tree.column("size_mb", width=80, anchor="e")
+        self.datasets_tree.column("path", width=320, anchor="w")
+        self.datasets_tree.pack(fill="both", expand=True, padx=6, pady=(0, 6))
+        self.datasets_tree.bind("<<TreeviewSelect>>", lambda e: self.show_selected_dataset_details())
+
+        self.datasets_status = tk.Text(frame, wrap="word", height=10)
+        self.datasets_status.pack(fill="both", expand=False, padx=6, pady=(0, 6))
+
+        self.refresh_datasets_panel()
+
+    def refresh_datasets_panel(self) -> None:
+        if not hasattr(self, "datasets_tree"):
+            return
+
+        for item in self.datasets_tree.get_children():
+            self.datasets_tree.delete(item)
+
+        rows = self.dataset_manager.installed_items()
+        self._dataset_rows_by_key = {row["key"]: row for row in rows}
+
+        for row in rows:
+            self.datasets_tree.insert(
+                "",
+                "end",
+                iid=row["key"],
+                values=(
+                    row["label"],
+                    row["category"],
+                    "Yes" if row["exists"] else "No",
+                    row["size_mb"],
+                    row["path"],
+                ),
+            )
+
+        self.datasets_status.delete("1.0", "end")
+        self.datasets_status.insert("end", "Dataset catalog refreshed.\n\n")
+        for row in rows:
+            self.datasets_status.insert(
+                "end",
+                f"- {row['label']}: {'installed' if row['exists'] else 'missing'} ({row['size_mb']} MB)\n",
+            )
+
+    def show_selected_dataset_details(self) -> None:
+        if not hasattr(self, "datasets_tree"):
+            return
+
+        sel = self.datasets_tree.selection()
+        if not sel:
+            return
+
+        key = sel[0]
+        row = getattr(self, "_dataset_rows_by_key", {}).get(key)
+        if not row:
+            return
+
+        item = self.dataset_manager.get_item(key)
+        self.datasets_status.delete("1.0", "end")
+        self.datasets_status.insert("end", f"{item.label}\n\n")
+        self.datasets_status.insert("end", f"Key: {item.key}\n")
+        self.datasets_status.insert("end", f"Category: {item.category}\n")
+        self.datasets_status.insert("end", f"Installed: {'Yes' if row['exists'] else 'No'}\n")
+        self.datasets_status.insert("end", f"Size MB: {row['size_mb']}\n")
+        self.datasets_status.insert("end", f"Path: {row['path']}\n\n")
+        self.datasets_status.insert("end", f"{item.description}\n")
+
+    def show_dataset_disk_status(self) -> None:
+        disk = self.dataset_manager.free_disk_space()
+        self.datasets_status.delete("1.0", "end")
+        self.datasets_status.insert("end", "Disk Status\n\n")
+        self.datasets_status.insert("end", f"Path: {disk['path']}\n")
+        self.datasets_status.insert("end", f"Total GB: {disk['total_gb']}\n")
+        self.datasets_status.insert("end", f"Free GB: {disk['free_gb']}\n")
+
+    def register_dataset_local_file(self) -> None:
+        if not hasattr(self, "datasets_tree"):
+            return
+
+        sel = self.datasets_tree.selection()
+        if not sel:
+            messagebox.showinfo("Dataset Manager", "Select a dataset row first.")
+            return
+
+        key = sel[0]
+        item = self.dataset_manager.get_item(key)
+        local_file = filedialog.askopenfilename(title=f"Select local file for {item.label}")
+        if not local_file:
+            return
+
+        try:
+            self.dataset_manager.register_local_file(key, local_file, copy_into_target=True)
+        except Exception as exc:
+            messagebox.showerror("Dataset Manager", f"Could not register dataset:\n\n{exc}")
+            return
+
+        self.refresh_datasets_panel()
+        self.datasets_status.insert("end", f"\nRegistered dataset for {item.label}.\n")
+
     def build_import_tab(self, parent: ttk.Frame) -> None:
         frame = ttk.LabelFrame(parent, text="Licensed Dataset Import")
         frame.pack(fill="x", padx=6, pady=6)
@@ -542,6 +812,44 @@ class UltimateBibleApp:
         except Exception:
             return None
 
+    def _render_clickable_strongs_summary(self, tags):
+        if not tags:
+            return
+
+        clickable = []
+        for t in tags:
+            token = str(t.get("token") or "").strip()
+            strongs = str(t.get("strongs") or "").strip().upper()
+            if not strongs:
+                continue
+            if strongs.isdigit():
+                strongs = f"G{strongs}"
+            if token:
+                clickable.append((token, strongs))
+
+        if not clickable:
+            return
+
+        self.reader.insert("end", "Clickable Strong's Links:\n", ("section_header",))
+        for i, (token, code) in enumerate(clickable):
+            label = f"{token} ({code})"
+            start_idx = self.reader.index("end")
+            self.reader.insert("end", label)
+            end_idx = self.reader.index(f"{start_idx}+{len(label)}c")
+            tag = f"summary_strongs_{i}_{code}"
+            self.reader.tag_add(tag, start_idx, end_idx)
+            self._bind_reader_strongs_tag(tag, code)
+            if i < len(clickable) - 1:
+                self.reader.insert("end", "  •  ", ())
+        self.reader.insert("end", "\n\n", ())
+
+    def _bind_reader_strongs_tag(self, tag: str, code: str):
+        self.reader.tag_configure(tag, foreground="blue", underline=True)
+        self.reader.tag_bind(tag, "<Button-1>", lambda e, c=code: self._safe_open_strongs_code(str(c)))
+        self.reader.tag_bind(tag, "<Enter>", lambda e: self.reader.config(cursor="hand2"))
+        self.reader.tag_bind(tag, "<Leave>", lambda e: self.reader.config(cursor="xterm"))
+
+
     def _insert_clickable_words(self, text: str, strongs_blob: str, verse=None):
         """
         Render verse text with inline clickable Strong's links.
@@ -572,7 +880,7 @@ class UltimateBibleApp:
                 tag = f"inline_strongs_{i}_{strongs}"
                 self.reader.tag_add(tag, start_idx, end_idx)
                 self.reader.tag_config(tag, foreground="#2563eb", underline=True)
-                self.reader.tag_bind(tag, "<Button-1>", lambda e, c=strongs: self.open_strongs_code(str(c)))
+                self.reader.tag_bind(tag, "<Button-1>", lambda e, c=strongs: self._safe_open_strongs_code(str(c)))
                 self.reader.tag_bind(tag, "<Enter>", lambda e: self.reader.config(cursor="hand2"))
                 self.reader.tag_bind(tag, "<Leave>", lambda e: self.reader.config(cursor="xterm"))
 
@@ -611,12 +919,12 @@ class UltimateBibleApp:
         context = self.db.get_context(verse.translation, verse.book, verse.chapter, verse.verse)
         self.reader.insert("end", f"{pretty_ref(verse.book, verse.chapter, verse.verse)} [{verse.translation.upper()}]\n\n")
         for row in context:
-            self.reader.insert("end", f"{row.chapter}:{row.verse} ")
+            self.reader.insert("end", f"{row.chapter}:{row.verse} ", ())
             if row.verse == verse.verse:
                 self._insert_clickable_words(row.text, "", verse=row)
             else:
-                self.reader.insert("end", self.sanitize_display_text(row.text))
-            self.reader.insert("end", "\n\n")
+                self.reader.insert("end", self.sanitize_display_text(row.text), ())
+            self.reader.insert("end", "\n\n", ())
 
         topics = self.topic_engine.detect(verse.text)
         if topics:
@@ -635,31 +943,54 @@ class UltimateBibleApp:
                 if idx < len(topics) - 1:
                     self.reader.insert("end", ", ")
                 else:
-                    self.reader.insert("end", "\n")
+                    self.reader.insert("end", "\n", ())
             try:
                 self.search_entry.delete(0, "end")
                 self.search_entry.insert(0, " ".join(topics[:5]))
             except Exception:
                 pass
 
-        clickable = self.build_top_clickable_strongs_list(verse.book, verse.chapter, verse.verse, verse.translation)
+        clickable = self.build_top_clickable_strongs_list(
+            verse.book, verse.chapter, verse.verse, verse.translation
+        )
         if clickable:
-            self.reader.insert("end", "\nClickable Strong's Links:\n")
-            for idx, (word, code) in enumerate(clickable[:20]):
-                start_idx = self.reader.index("end")
+            self.reader.tag_configure("section_header", font=("TkDefaultFont", 10, "bold"))
+            self.reader.insert("end", "\nClickable Strong's Links:\n", ("section_header",))
+
+            max_items = min(len(clickable), 20)
+            for idx, (word, code) in enumerate(clickable[:max_items]):
+                code = str(code).strip().upper()
+                if code.isdigit():
+                    code = f"G{code}"
+
                 label = f"{word} ({code})"
+                start_idx = self.reader.index("end-1c")
                 self.reader.insert("end", label)
-                end_idx = self.reader.index(f"{start_idx} + {len(label)}c")
+                end_idx = self.reader.index("end-1c")
                 tag = f"top_strongs_{idx}_{code}"
-                self.reader.tag_add(tag, start_idx, end_idx)
-                self.reader.tag_config(tag, foreground="#1d4ed8", underline=True)
-                self.reader.tag_bind(tag, "<Button-1>", lambda e, c=code: self.open_strongs_code(str(c)))
-                self.reader.tag_bind(tag, "<Enter>", lambda e: self.reader.config(cursor="hand2"))
-                self.reader.tag_bind(tag, "<Leave>", lambda e: self.reader.config(cursor="xterm"))
-                if idx < min(len(clickable), 20) - 1:
-                    self.reader.insert("end", "  •  ")
+
+                self.reader.tag_add(tag, start_idx, f"{end_idx}+1c")
+                self.reader.tag_configure(tag, foreground="blue", underline=1)
+                self.reader.tag_bind(
+                    tag,
+                    "<Button-1>",
+                    lambda e, c=code: self._safe_open_strongs_code(str(c))
+                )
+                self.reader.tag_bind(
+                    tag,
+                    "<Enter>",
+                    lambda e: self.reader.config(cursor="hand2")
+                )
+                self.reader.tag_bind(
+                    tag,
+                    "<Leave>",
+                    lambda e: self.reader.config(cursor="xterm")
+                )
+
+                if idx < max_items - 1:
+                    self.reader.insert("end", "  •  ", ())
                 else:
-                    self.reader.insert("end", "\n")
+                    self.reader.insert("end", " ")
         else:
             self.reader.insert("end", "\n(No Strong's data for this translation)\n")
 
@@ -703,15 +1034,39 @@ class UltimateBibleApp:
 
     def get_crossref_preview_rows_for_current(self):
         rows = []
-        if self.crossref_engine:
-            try:
-                refs = self.crossref_engine.get_cross_references(self.normalize_current_book(), int(self.chapter_var.get()), int(self.verse_var.get()), limit=50)
-            except Exception:
-                refs = []
-            for r in refs:
-                ref_label = f"{r.target_book.title()} {r.target_chapter}:{r.target_verse}"
-                preview_text = self.fetch_verse_text(r.target_book, r.target_chapter, r.target_verse, translation=self.translation_var.get().strip().lower()) or self.fetch_verse_text(r.target_book, r.target_chapter, r.target_verse, translation="esv")
-                rows.append({"ref": ref_label, "votes": r.votes, "text": preview_text or "(verse text unavailable)"})
+        if not self.crossref_engine:
+            return rows
+
+        try:
+            book = self.normalize_current_book()
+            chapter = int(self.chapter_var.get() or 1)
+            verse = int(self.verse_var.get() or 1)
+        except Exception:
+            return rows
+
+        refs = []
+        try:
+            if hasattr(self.crossref_engine, "get_cross_references"):
+                refs = self.crossref_engine.get_cross_references(book, chapter, verse, limit=50)
+            elif hasattr(self.crossref_engine, "get_references"):
+                refs = self.crossref_engine.get_references(book, chapter, verse, limit=50)
+        except Exception:
+            refs = []
+
+        for r in refs:
+            target_book = getattr(r, "target_book", None) or getattr(r, "target_book_start", "")
+            target_chapter = getattr(r, "target_chapter", None) or getattr(r, "target_chapter_start", 0)
+            target_verse = getattr(r, "target_verse", None) or getattr(r, "target_verse_start", 0)
+            target_ref = getattr(r, "target_ref", "") or f"{str(target_book).title()} {target_chapter}:{target_verse}"
+            if not target_book or not target_chapter or not target_verse:
+                continue
+            ref_label = target_ref
+            preview_text = (
+                self.fetch_verse_text(target_book, target_chapter, target_verse, translation=self.translation_var.get().strip().lower())
+                or self.fetch_verse_text(target_book, target_chapter, target_verse, translation="esv")
+                or "(verse text unavailable)"
+            )
+            rows.append({"ref": ref_label, "votes": getattr(r, "votes", 0), "text": preview_text})
         return rows
 
     def open_crossref_preview_window(self, ref_label: str, verse_text: str):
@@ -1523,19 +1878,96 @@ class UltimateBibleApp:
         self.build_study_question_buttons(answer)
         self.status_var.set("Study guide generated")
 
+    def _bind_commentary_strongs_tag(self, tag: str, code: str):
+        self.commentary_output.tag_configure(
+            tag,
+            foreground="blue",
+            underline=1
+        )
+
+        self.commentary_output.tag_bind(
+            tag,
+            "<Button-1>",
+            lambda e, c=code: self._safe_open_strongs_code(str(c))
+        )
+
+        self.commentary_output.tag_bind(
+            tag,
+            "<Enter>",
+            lambda e, t=tag: (
+                self.commentary_output.config(cursor="hand2"),
+                self.commentary_output.tag_configure(
+                    t,
+                    foreground="blue",
+                    underline=1,
+                    background="#eef6ff"
+                )
+            )
+        )
+
+        self.commentary_output.tag_bind(
+            tag,
+            "<Leave>",
+            lambda e, t=tag: (
+                self.commentary_output.config(cursor="xterm"),
+                self.commentary_output.tag_configure(
+                    t,
+                    foreground="blue",
+                    underline=1,
+                    background=""
+                )
+            )
+        )
+
     def generate_commentary(self) -> None:
         verse = self.current_verse()
         self.commentary_output.delete("1.0", "end")
         if verse is None:
             self.commentary_output.insert("end", "Verse not found.")
             return
-        self.commentary_output.insert("end", self.commentary_engine.explain(verse))
-        links = self.build_top_clickable_strongs_list(verse.book, verse.chapter, verse.verse, verse.translation)
+
+        self.commentary_output.insert("end", self.commentary_engine.explain(verse), ())
+        links = self.build_top_clickable_strongs_list(
+            verse.book, verse.chapter, verse.verse, verse.translation
+        )
+
         if links:
-            self.commentary_output.insert("end", "\n\nWord / Strong's Links\n")
-            for word, code in links[:15]:
-                self.commentary_output.insert("end", f"- {word} — {code}\n")
+            self.commentary_output.tag_configure(
+                "section_header",
+                font=("TkDefaultFont", 10, "bold")
+            )
+            self.commentary_output.insert(
+                "end",
+                "\n\nWord / Strong's Links\n",
+                ("section_header",)
+            )
+
+            for idx, (word, code) in enumerate(links[:15]):
+                code = str(code).strip().upper()
+                if code.isdigit():
+                    code = f"G{code}"
+
+                lemma = ""
+                try:
+                    result = self.strongs_engine.study_code(code)
+                    entry = getattr(result, "entry", None)
+                    lemma = str(getattr(entry, "lemma", "") or "").strip()
+                except Exception:
+                    lemma = ""
+
+                self.commentary_output.insert("end", f"- {word} — ", ())
+
+                tag = f"commentary_strongs_{idx}_{code}"
+                self.commentary_output.insert("end", code, (tag,))
+                self._bind_commentary_strongs_tag(tag, code)
+
+                if lemma:
+                    self.commentary_output.insert("end", f" ({lemma})", ())
+
+                self.commentary_output.insert("end", "\n", ())
+
         self.status_var.set("Commentary generated")
+
 
     def open_strongs_code(self, code: str) -> None:
         self.strongs_query_var.set(str(code))

@@ -1,24 +1,19 @@
-.venv/
-# Generated / downloaded data
+# =========================
+# 🔥 CORE RULE: NO DATASETS
+# =========================
+
+# Only ignore generated/temp
 output/downloads/
 output/tmp/
-exports/
+
 cache/
+exports/
 
-# Local databases
-*.db
-*.sqlite
-*.sqlite3
-
-# Generated maps / html exports
-*.html
-
-# Archives
+# Ignore large temporary files
 *.zip
-*.tar
-*.tar.gz
-*.7z
+*.html
 
 # Python
 __pycache__/
 *.pyc
+.venv/
