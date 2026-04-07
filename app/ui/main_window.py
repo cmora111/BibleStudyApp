@@ -72,6 +72,9 @@ class UltimateBibleApp:
         self._graph_nav_menu = None
         self._semantic_search_counter = itertools.count(1)
         self._active_semantic_search_token = 0
+        self._strongs_result_cache = {}
+        self._strongs_tooltip = None
+        self._strongs_popup = None
         self.build_ui()
         self.start_map_callback_server()
         self.root.after(100, self.display_current_verse)
@@ -434,9 +437,7 @@ class UltimateBibleApp:
             result = self.strongs_engine.study_code(code)
         except Exception as exc:
             try:
-                messagebox.showerror("Strong's Lookup", f"Could not open Strong's code {code}:
-
-{exc}")
+                messagebox.showerror("Strong's Lookup", f"Could not open Strong's code {code}: {exc}")
             except Exception:
                 pass
             return
@@ -462,6 +463,88 @@ class UltimateBibleApp:
             self.refresh_datasets_panel()
         except Exception:
             pass
+
+    def _safe_open_strongs_code(self, code: str):
+        code = str(code or "").strip().upper()
+        if not code:
+            return
+        if code.isdigit():
+            code = f"G{code}"
+
+        try:
+            result = self.strongs_engine.study_code(code)
+        except Exception as exc:
+            messagebox.showerror(
+                "Strong's Lookup",
+                f"Could not open Strong's code {code}: {exc}"
+            )
+            return
+
+        self.show_strongs_result_popup(code, result)
+
+    def show_strongs_result_popup(self, code: str, result):
+        win = tk.Toplevel(self.root)
+        win.title(f"Strong's {code}")
+        win.geometry("760x520")
+
+        txt = tk.Text(win, wrap="word")
+        txt.pack(fill="both", expand=True, padx=8, pady=8)
+
+        lines = [f"Strong's {code}", ""]
+
+        entry = getattr(result, "entry", None)
+        if entry:
+            lines.append(f"Lemma: {getattr(entry, 'lemma', '')}")
+            lines.append(f"Transliteration: {getattr(entry, 'transliteration', '')}")
+            lines.append(f"Language: {getattr(entry, 'language', '')}")
+            lines.append(f"Gloss: {getattr(entry, 'gloss', '')}")
+            lines.append(f"Definition: {getattr(entry, 'definition', '')}")
+            lines.append("")
+
+        linked_codes = getattr(result, "linked_codes", None)
+        if linked_codes:
+            lines.append("Linked Codes:")
+            lines.append(", ".join(str(x) for x in linked_codes))
+            lines.append("")
+
+        occurrences = getattr(result, "occurrences", None)
+        if occurrences:
+            lines.append("Occurrences:")
+            for item in occurrences[:20]:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        verse_hits = getattr(result, "verse_hits", None)
+        if verse_hits:
+            lines.append("Verse Hits:")
+            for item in verse_hits[:20]:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        if len(lines) <= 2:
+            lines.append(str(result))
+
+        txt.insert("1.0", "\n".join(lines))
+        txt.configure(state="disabled")
+
+    def _bind_reader_strongs_tag(self, tag: str, code: str):
+        self.reader.tag_configure(tag, foreground="blue", underline=1)
+        self.reader.tag_bind(
+            tag,
+            "<Button-1>",
+            lambda e, c=code: self._safe_open_strongs_code(str(c), event=e)
+        )
+        self.reader.tag_bind(
+            tag,
+            "<Enter>",
+            lambda e: self.reader.config(cursor="hand2")
+        )
+        self.reader.tag_bind(
+            tag,
+            "<Leave>",
+            lambda e: self.reader.config(cursor="xterm")
+        )
+
 
     def open_dataset_import_wizard(self):
         try:
@@ -729,6 +812,37 @@ class UltimateBibleApp:
         except Exception:
             return None
 
+    def _render_clickable_strongs_summary(self, tags):
+        if not tags:
+            return
+
+        clickable = []
+        for t in tags:
+            token = str(t.get("token") or "").strip()
+            strongs = str(t.get("strongs") or "").strip().upper()
+            if not strongs:
+                continue
+            if strongs.isdigit():
+                strongs = f"G{strongs}"
+            if token:
+                clickable.append((token, strongs))
+
+        if not clickable:
+            return
+
+        self.reader.insert("end", "Clickable Strong's Links:\n", ("section_header",))
+        for i, (token, code) in enumerate(clickable):
+            label = f"{token} ({code})"
+            start_idx = self.reader.index("end")
+            self.reader.insert("end", label)
+            end_idx = self.reader.index(f"{start_idx}+{len(label)}c")
+            tag = f"summary_strongs_{i}_{code}"
+            self.reader.tag_add(tag, start_idx, end_idx)
+            self._bind_reader_strongs_tag(tag, code)
+            if i < len(clickable) - 1:
+                self.reader.insert("end", "  •  ", ())
+        self.reader.insert("end", "\n\n", ())
+
     def _bind_reader_strongs_tag(self, tag: str, code: str):
         self.reader.tag_configure(tag, foreground="blue", underline=True)
         self.reader.tag_bind(tag, "<Button-1>", lambda e, c=code: self._safe_open_strongs_code(str(c)))
@@ -805,12 +919,12 @@ class UltimateBibleApp:
         context = self.db.get_context(verse.translation, verse.book, verse.chapter, verse.verse)
         self.reader.insert("end", f"{pretty_ref(verse.book, verse.chapter, verse.verse)} [{verse.translation.upper()}]\n\n")
         for row in context:
-            self.reader.insert("end", f"{row.chapter}:{row.verse} ")
+            self.reader.insert("end", f"{row.chapter}:{row.verse} ", ())
             if row.verse == verse.verse:
                 self._insert_clickable_words(row.text, "", verse=row)
             else:
-                self.reader.insert("end", self.sanitize_display_text(row.text))
-            self.reader.insert("end", "\n\n")
+                self.reader.insert("end", self.sanitize_display_text(row.text), ())
+            self.reader.insert("end", "\n\n", ())
 
         topics = self.topic_engine.detect(verse.text)
         if topics:
@@ -829,28 +943,54 @@ class UltimateBibleApp:
                 if idx < len(topics) - 1:
                     self.reader.insert("end", ", ")
                 else:
-                    self.reader.insert("end", "\n")
+                    self.reader.insert("end", "\n", ())
             try:
                 self.search_entry.delete(0, "end")
                 self.search_entry.insert(0, " ".join(topics[:5]))
             except Exception:
                 pass
 
-        clickable = self.build_top_clickable_strongs_list(verse.book, verse.chapter, verse.verse, verse.translation)
+        clickable = self.build_top_clickable_strongs_list(
+            verse.book, verse.chapter, verse.verse, verse.translation
+        )
         if clickable:
-            self.reader.insert("end", "\nClickable Strong's Links:\n")
-            for idx, (word, code) in enumerate(clickable[:20]):
-                start_idx = self.reader.index("end")
+            self.reader.tag_configure("section_header", font=("TkDefaultFont", 10, "bold"))
+            self.reader.insert("end", "\nClickable Strong's Links:\n", ("section_header",))
+
+            max_items = min(len(clickable), 20)
+            for idx, (word, code) in enumerate(clickable[:max_items]):
+                code = str(code).strip().upper()
+                if code.isdigit():
+                    code = f"G{code}"
+
                 label = f"{word} ({code})"
+                start_idx = self.reader.index("end-1c")
                 self.reader.insert("end", label)
-                end_idx = self.reader.index(f"{start_idx} + {len(label)}c")
+                end_idx = self.reader.index("end-1c")
                 tag = f"top_strongs_{idx}_{code}"
-                self.reader.tag_add(tag, start_idx, end_idx)
-                self._bind_reader_strongs_tag(tag, code)
-                if idx < min(len(clickable), 20) - 1:
-                    self.reader.insert("end", "  •  ")
+
+                self.reader.tag_add(tag, start_idx, f"{end_idx}+1c")
+                self.reader.tag_configure(tag, foreground="blue", underline=1)
+                self.reader.tag_bind(
+                    tag,
+                    "<Button-1>",
+                    lambda e, c=code: self._safe_open_strongs_code(str(c))
+                )
+                self.reader.tag_bind(
+                    tag,
+                    "<Enter>",
+                    lambda e: self.reader.config(cursor="hand2")
+                )
+                self.reader.tag_bind(
+                    tag,
+                    "<Leave>",
+                    lambda e: self.reader.config(cursor="xterm")
+                )
+
+                if idx < max_items - 1:
+                    self.reader.insert("end", "  •  ", ())
                 else:
-                    self.reader.insert("end", "\n")
+                    self.reader.insert("end", " ")
         else:
             self.reader.insert("end", "\n(No Strong's data for this translation)\n")
 
@@ -1738,19 +1878,96 @@ class UltimateBibleApp:
         self.build_study_question_buttons(answer)
         self.status_var.set("Study guide generated")
 
+    def _bind_commentary_strongs_tag(self, tag: str, code: str):
+        self.commentary_output.tag_configure(
+            tag,
+            foreground="blue",
+            underline=1
+        )
+
+        self.commentary_output.tag_bind(
+            tag,
+            "<Button-1>",
+            lambda e, c=code: self._safe_open_strongs_code(str(c))
+        )
+
+        self.commentary_output.tag_bind(
+            tag,
+            "<Enter>",
+            lambda e, t=tag: (
+                self.commentary_output.config(cursor="hand2"),
+                self.commentary_output.tag_configure(
+                    t,
+                    foreground="blue",
+                    underline=1,
+                    background="#eef6ff"
+                )
+            )
+        )
+
+        self.commentary_output.tag_bind(
+            tag,
+            "<Leave>",
+            lambda e, t=tag: (
+                self.commentary_output.config(cursor="xterm"),
+                self.commentary_output.tag_configure(
+                    t,
+                    foreground="blue",
+                    underline=1,
+                    background=""
+                )
+            )
+        )
+
     def generate_commentary(self) -> None:
         verse = self.current_verse()
         self.commentary_output.delete("1.0", "end")
         if verse is None:
             self.commentary_output.insert("end", "Verse not found.")
             return
-        self.commentary_output.insert("end", self.commentary_engine.explain(verse))
-        links = self.build_top_clickable_strongs_list(verse.book, verse.chapter, verse.verse, verse.translation)
+
+        self.commentary_output.insert("end", self.commentary_engine.explain(verse), ())
+        links = self.build_top_clickable_strongs_list(
+            verse.book, verse.chapter, verse.verse, verse.translation
+        )
+
         if links:
-            self.commentary_output.insert("end", "\n\nWord / Strong's Links\n")
-            for word, code in links[:15]:
-                self.commentary_output.insert("end", f"- {word} — {code}\n")
+            self.commentary_output.tag_configure(
+                "section_header",
+                font=("TkDefaultFont", 10, "bold")
+            )
+            self.commentary_output.insert(
+                "end",
+                "\n\nWord / Strong's Links\n",
+                ("section_header",)
+            )
+
+            for idx, (word, code) in enumerate(links[:15]):
+                code = str(code).strip().upper()
+                if code.isdigit():
+                    code = f"G{code}"
+
+                lemma = ""
+                try:
+                    result = self.strongs_engine.study_code(code)
+                    entry = getattr(result, "entry", None)
+                    lemma = str(getattr(entry, "lemma", "") or "").strip()
+                except Exception:
+                    lemma = ""
+
+                self.commentary_output.insert("end", f"- {word} — ", ())
+
+                tag = f"commentary_strongs_{idx}_{code}"
+                self.commentary_output.insert("end", code, (tag,))
+                self._bind_commentary_strongs_tag(tag, code)
+
+                if lemma:
+                    self.commentary_output.insert("end", f" ({lemma})", ())
+
+                self.commentary_output.insert("end", "\n", ())
+
         self.status_var.set("Commentary generated")
+
 
     def open_strongs_code(self, code: str) -> None:
         self.strongs_query_var.set(str(code))
