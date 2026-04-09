@@ -946,10 +946,7 @@ class UltimateBibleApp:
                     strongs = f"G{strongs}"
                 tag = f"inline_strongs_{i}_{strongs}"
                 self.reader.tag_add(tag, start_idx, end_idx)
-                self.reader.tag_config(tag, foreground="#2563eb", underline=True)
-                self.reader.tag_bind(tag, "<Button-1>", lambda e, c=strongs: self._safe_open_strongs_code(str(c)))
-                self.reader.tag_bind(tag, "<Enter>", lambda e: self.reader.config(cursor="hand2"))
-                self.reader.tag_bind(tag, "<Leave>", lambda e: self.reader.config(cursor="xterm"))
+                self._bind_reader_strongs_tag(tag, strongs)
 
             if i < len(words):
                 self.reader.insert("end", " ")
@@ -1037,22 +1034,7 @@ class UltimateBibleApp:
                 tag = f"top_strongs_{idx}_{code}"
 
                 self.reader.tag_add(tag, start_idx, f"{end_idx}+1c")
-                self.reader.tag_configure(tag, foreground="blue", underline=1)
-                self.reader.tag_bind(
-                    tag,
-                    "<Button-1>",
-                    lambda e, c=code: self._safe_open_strongs_code(str(c))
-                )
-                self.reader.tag_bind(
-                    tag,
-                    "<Enter>",
-                    lambda e: self.reader.config(cursor="hand2")
-                )
-                self.reader.tag_bind(
-                    tag,
-                    "<Leave>",
-                    lambda e: self.reader.config(cursor="xterm")
-                )
+                self._bind_reader_strongs_tag(tag, code)
 
                 if idx < max_items - 1:
                     self.reader.insert("end", "  •  ", ())
@@ -2025,6 +2007,10 @@ class UltimateBibleApp:
         self.status_var.set("Study guide generated")
 
     def _bind_commentary_strongs_tag(self, tag: str, code: str):
+        code = str(code or "").strip().upper()
+        if code.isdigit():
+            code = f"G{code}"
+
         self.commentary_output.tag_configure(
             tag,
             foreground="blue",
@@ -2034,21 +2020,43 @@ class UltimateBibleApp:
         self.commentary_output.tag_bind(
             tag,
             "<Button-1>",
-            lambda e, c=code: self._safe_open_strongs_code(str(c))
+            lambda e, c=code: self._safe_open_strongs_code(str(c), event=e)
+        )
+
+        self.commentary_output.tag_bind(
+            tag,
+            "<Button-3>",
+            lambda e, c=code: self._show_strongs_context_menu(e, str(c))
         )
 
         self.commentary_output.tag_bind(
             tag,
             "<Enter>",
-            lambda e, t=tag: (
+            lambda e, t=tag, c=code: (
                 self.commentary_output.config(cursor="hand2"),
                 self.commentary_output.tag_configure(
                     t,
                     foreground="blue",
                     underline=1,
                     background="#eef6ff"
-                )
+                ),
+                self._show_strongs_tooltip(e, str(c))
             )
+        )
+
+        self.commentary_output.tag_bind(
+            tag,
+            "<Leave>",
+            lambda e, t=tag: (
+                self.commentary_output.tag_configure(
+                    t,
+                    foreground="blue",
+                    underline=1,
+                    background=""
+                ),
+                self._hide_strongs_tooltip()
+            )
+        )
         )
 
         self.commentary_output.tag_bind(
