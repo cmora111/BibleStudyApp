@@ -73,17 +73,12 @@ class UltimateBibleApp:
         self._semantic_search_counter = itertools.count(1)
         self._active_semantic_search_token = 0
         self._strongs_result_cache = {}
-        self._strongs_tooltip = None
-        self._strongs_tooltip_label = None
-        self._strongs_hover_after = None
-        self._strongs_tooltip_code = None
-        self._strongs_popup = None
         self._engine_cache = {}
-        self._engine_building = set()
-        self._active_translation_load = None
+        self._strongs_tooltip = None
+        self._strongs_popup = None
         self.build_ui()
         self.start_map_callback_server()
-        self.root.after(100, lambda: self._activate_translation(self.translation_var.get(), refresh_ui=True))
+        self.root.after(100, self._startup_activate_translation)
 
     def build_ui(self) -> None:
         self.build_menu()
@@ -135,107 +130,89 @@ class UltimateBibleApp:
 
     def rebuild_semantic_index(self) -> None:
         translation = (self.translation_var.get() or "").strip().lower()
-        self.status_var.set(f"Reloading {translation.upper()} resources...")
-        self._strongs_result_cache.clear()
+        self.status_var.set(f"Resetting translation resources for {translation.upper()}...")
         self._engine_cache.pop(translation, None)
-        self._activate_translation(translation, refresh_ui=True, force_rebuild=True)
-
-    def _apply_translation_engines(self, translation: str, semantic_engine, strongs_engine, study_assistant) -> None:
-        self.semantic_engine = semantic_engine
-        self.strongs_engine = strongs_engine
-        self.study_assistant = study_assistant
-        self._engine_cache[translation] = (semantic_engine, strongs_engine, study_assistant)
-
-    def _activate_translation(self, translation: str, refresh_ui: bool = True, force_rebuild: bool = False) -> None:
-        translation = (translation or "").strip().lower()
-        if not translation:
-            translation = "kjv"
-
-        self._active_translation_load = translation
-
-        cached = None if force_rebuild else self._engine_cache.get(translation)
-        if cached is not None:
-            self._apply_translation_engines(translation, *cached)
-            self.status_var.set(f"Translation ready: {translation.upper()}")
-            if refresh_ui:
-                try:
-                    self.display_current_verse()
-                except Exception:
-                    pass
-            return
-
-        if translation in self._engine_building:
-            self.status_var.set(f"Loading {translation.upper()} resources...")
-            return
-
-        self._engine_building.add(translation)
-        self.status_var.set(f"Loading {translation.upper()} resources...")
-
-        def worker():
-            try:
-                semantic_engine = SemanticSearchEngine(self.db, translation=translation)
-                strongs_engine = StrongsWordStudyEngine(self.db, translation=translation)
-                study_assistant = AIBibleStudyAssistant(semantic_engine, strongs_engine)
-                result = (semantic_engine, strongs_engine, study_assistant, None)
-            except Exception as exc:
-                result = (None, None, None, exc)
-
-            def finish():
-                self._engine_building.discard(translation)
-                semantic_engine, strongs_engine, study_assistant, err = result
-                if err is not None:
-                    self.status_var.set(f"Failed to load {translation.upper()}")
-                    try:
-                        messagebox.showerror("Translation", f"Could not load {translation.upper()}:\n\n{err}")
-                    except Exception:
-                        pass
-                    return
-
-                if self._active_translation_load != translation:
-                    self._engine_cache[translation] = (semantic_engine, strongs_engine, study_assistant)
-                    return
-
-                self._apply_translation_engines(translation, semantic_engine, strongs_engine, study_assistant)
-                self.status_var.set(f"Translation ready: {translation.upper()}")
-                if refresh_ui:
-                    try:
-                        self.display_current_verse()
-                    except Exception:
-                        pass
-
-            try:
-                self.root.after(0, finish)
-            except Exception:
-                pass
-
+        self.semantic_engine = None
+        self.strongs_engine = None
+        self.study_assistant = None
+        self._strongs_result_cache.clear()
         try:
-            threading.Thread(target=worker, daemon=True).start()
-        except Exception as exc:
-            self._engine_building.discard(translation)
-            self.status_var.set("Translation load failed")
-            try:
-                messagebox.showerror("Translation", f"Could not start loading {translation.upper()}:\n\n{exc}")
-            except Exception:
-                pass
+            if hasattr(self, "search_results"):
+                self.search_results.delete("1.0", "end")
+                self.search_results.insert("end", f"Resources reset for {translation.upper()}\n")
+        except Exception:
+            pass
+
+    def _startup_activate_translation(self) -> None:
+        translation = (self.translation_var.get() or "").strip().lower() or "kjv"
+        self.status_var.set(f"Ready: {translation.upper()}")
+        try:
+            self.display_current_verse()
+        except Exception:
+            pass
+
+    def _ensure_semantic_engine(self):
+        translation = (self.translation_var.get() or "").strip().lower() or "kjv"
+        cache = self._engine_cache.setdefault(translation, {})
+        engine = cache.get("semantic")
+        if engine is None:
+            self.status_var.set(f"Loading semantic engine for {translation.upper()}...")
+            engine = SemanticSearchEngine(self.db, translation=translation)
+            cache["semantic"] = engine
+        self.semantic_engine = engine
+        return engine
+
+    def _ensure_strongs_engine(self):
+        translation = (self.translation_var.get() or "").strip().lower() or "kjv"
+        cache = self._engine_cache.setdefault(translation, {})
+        engine = cache.get("strongs")
+        if engine is None:
+            self.status_var.set(f"Loading Strong's engine for {translation.upper()}...")
+            engine = StrongsWordStudyEngine(self.db, translation=translation)
+            cache["strongs"] = engine
+        self.strongs_engine = engine
+        return engine
+
+    def _ensure_study_assistant(self):
+        translation = (self.translation_var.get() or "").strip().lower() or "kjv"
+        cache = self._engine_cache.setdefault(translation, {})
+        assistant = cache.get("assistant")
+        if assistant is None:
+            semantic_engine = self._ensure_semantic_engine()
+            strongs_engine = self._ensure_strongs_engine()
+            assistant = AIBibleStudyAssistant(semantic_engine, strongs_engine)
+            cache["assistant"] = assistant
+        self.study_assistant = assistant
+        return assistant
 
     def on_translation_change(self) -> None:
-        translation = (self.translation_var.get() or "").strip().lower()
-        self.status_var.set(f"Switching to {translation.upper()}...")
+        translation = (self.translation_var.get() or "").strip().lower() or "kjv"
+
+        self.semantic_engine = None
+        self.strongs_engine = None
+        self.study_assistant = None
         self._strongs_result_cache.clear()
 
         try:
-            self._hide_strongs_tooltip()
+            if self._strongs_tooltip is not None:
+                self._strongs_tooltip.destroy()
+        except Exception:
+            pass
+        self._strongs_tooltip = None
+
+        try:
+            self.display_current_verse()
         except Exception:
             pass
 
         try:
             if hasattr(self, "search_results"):
                 self.search_results.delete("1.0", "end")
-                self.search_results.insert("end", f"Loading resources for {translation.upper()}...\n")
+                self.search_results.insert("end", f"Translation changed to {translation.upper()}\nSemantic search engine will load on first use.\n")
         except Exception:
             pass
 
-        self._activate_translation(translation, refresh_ui=True)
+        self.status_var.set(f"Translation changed to {translation.upper()}")
 
     def prettify_reference_label(self, text: str) -> str:
         value = (text or "").strip()
@@ -622,203 +599,6 @@ class UltimateBibleApp:
         )
 
 
-    def _hide_strongs_tooltip(self, event=None):
-        after_id = getattr(self, "_strongs_hover_after", None)
-        if after_id:
-            try:
-                self.root.after_cancel(after_id)
-            except Exception:
-                pass
-            self._strongs_hover_after = None
-
-        tip = getattr(self, "_strongs_tooltip", None)
-        if tip is not None:
-            try:
-                tip.withdraw()
-            except Exception:
-                try:
-                    tip.destroy()
-                except Exception:
-                    pass
-        self._strongs_tooltip_code = None
-
-    def _update_strongs_tooltip_from_result(self, code: str, result):
-        if getattr(self, "_strongs_tooltip_code", None) != code:
-            return
-
-        label = getattr(self, "_strongs_tooltip_label", None)
-        tip = getattr(self, "_strongs_tooltip", None)
-        if label is None or tip is None:
-            return
-
-        entry = getattr(result, "entry", None) if result is not None else None
-        lemma = getattr(entry, "lemma", "") if entry else ""
-        gloss = getattr(entry, "gloss", "") if entry else ""
-        definition = getattr(entry, "definition", "") if entry else ""
-
-        parts = [f"Strong's {code}"]
-        if lemma:
-            parts.append(f"Lemma: {lemma}")
-        if gloss:
-            parts.append(f"Gloss: {gloss}")
-        if definition:
-            definition = str(definition).replace("\r", " ").replace("\n", " ").strip()
-            if len(definition) > 260:
-                definition = definition[:257].rstrip() + "..."
-            parts.append(definition)
-
-        try:
-            label.config(text="\n".join(parts))
-            tip.deiconify()
-            tip.lift()
-        except Exception:
-            pass
-
-    def _show_strongs_tooltip(self, event, code: str):
-        translation = (self.translation_var.get() or "").strip().lower()
-        if translation in getattr(self, "_engine_building", set()):
-            return
-        if self.strongs_engine is None:
-            return
-
-        code = str(code or "").strip().upper()
-        if code.isdigit():
-            code = f"G{code}"
-
-        self._strongs_tooltip_code = code
-        x = getattr(event, "x_root", self.root.winfo_rootx() + 60) + 14
-        y = getattr(event, "y_root", self.root.winfo_rooty() + 60) + 14
-
-        tip = getattr(self, "_strongs_tooltip", None)
-        label = getattr(self, "_strongs_tooltip_label", None)
-
-        if tip is None or label is None or not bool(tip.winfo_exists()):
-            try:
-                tip = tk.Toplevel(self.root)
-                tip.title(f"Strong's Preview - {code}")
-                tip.transient(self.root)
-                tip.resizable(False, False)
-
-                outer = ttk.Frame(tip, padding=8)
-                outer.pack(fill="both", expand=True)
-
-                label = tk.Label(
-                    outer,
-                    justify="left",
-                    anchor="nw",
-                    bg="#fff8dc",
-                    relief="solid",
-                    borderwidth=1,
-                    padx=8,
-                    pady=6,
-                    wraplength=380,
-                )
-                label.pack(fill="both", expand=True)
-
-                self._strongs_tooltip = tip
-                self._strongs_tooltip_label = label
-            except Exception:
-                self._strongs_tooltip = None
-                self._strongs_tooltip_label = None
-                return
-
-        try:
-            tip.title(f"Strong's Preview - {code}")
-            label.config(text=f"Strong's {code}\nLoading...")
-            tip.geometry(f"420x160+{x}+{y}")
-            tip.deiconify()
-            tip.lift()
-        except Exception:
-            pass
-
-        cached = self._strongs_result_cache.get(code)
-        if cached is not None:
-            self._update_strongs_tooltip_from_result(code, cached)
-            return
-
-        def worker():
-            try:
-                result = self.strongs_engine.study_code(code)
-            except Exception:
-                result = None
-
-            def finish():
-                if getattr(self, "_strongs_tooltip_code", None) != code:
-                    return
-                if result is not None:
-                    self._strongs_result_cache[code] = result
-                self._update_strongs_tooltip_from_result(code, result)
-
-            try:
-                self.root.after(0, finish)
-            except Exception:
-                pass
-
-        try:
-            threading.Thread(target=worker, daemon=True).start()
-        except Exception:
-            pass
-
-    def copy_text_to_clipboard(self, text: str):
-        try:
-            self.root.clipboard_clear()
-            self.root.clipboard_append(text)
-            self.root.update_idletasks()
-            self.status_var.set("Copied to clipboard")
-        except Exception:
-            pass
-
-    def _show_strongs_context_menu(self, event, code: str):
-        code = str(code or "").strip().upper()
-        if code.isdigit():
-            code = f"G{code}"
-
-        menu = tk.Menu(self.root, tearoff=0)
-        menu.add_command(label=f"Open {code}", command=lambda c=code: self._safe_open_strongs_code(c))
-        menu.add_command(label=f"Copy {code}", command=lambda c=code: self.copy_text_to_clipboard(c))
-        try:
-            menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            try:
-                menu.grab_release()
-            except Exception:
-                pass
-
-    def _warm_visible_strongs_cache(self):
-        if self.strongs_engine is None:
-            return
-        verse = self.current_verse()
-        if verse is None:
-            return
-
-        links = self.build_top_clickable_strongs_list(
-            verse.book, verse.chapter, verse.verse, verse.translation
-        )
-
-        codes = []
-        for _, code in links[:8]:
-            code = str(code or "").strip().upper()
-            if code.isdigit():
-                code = f"G{code}"
-            if code not in self._strongs_result_cache:
-                codes.append(code)
-
-        if not codes:
-            return
-
-        def worker():
-            for code in codes:
-                try:
-                    result = self.strongs_engine.study_code(code)
-                    self._strongs_result_cache[code] = result
-                except Exception:
-                    pass
-
-        try:
-            threading.Thread(target=worker, daemon=True).start()
-        except Exception:
-            pass
-
     def open_dataset_import_wizard(self):
         try:
             DatasetImportWizard(self.root, self.dataset_manager, on_complete=self.refresh_after_dataset_change)
@@ -1152,7 +932,10 @@ class UltimateBibleApp:
                     strongs = f"G{strongs}"
                 tag = f"inline_strongs_{i}_{strongs}"
                 self.reader.tag_add(tag, start_idx, end_idx)
-                self._bind_reader_strongs_tag(tag, strongs)
+                self.reader.tag_config(tag, foreground="#2563eb", underline=True)
+                self.reader.tag_bind(tag, "<Button-1>", lambda e, c=strongs: self._safe_open_strongs_code(str(c)))
+                self.reader.tag_bind(tag, "<Enter>", lambda e: self.reader.config(cursor="hand2"))
+                self.reader.tag_bind(tag, "<Leave>", lambda e: self.reader.config(cursor="xterm"))
 
             if i < len(words):
                 self.reader.insert("end", " ")
@@ -1240,7 +1023,22 @@ class UltimateBibleApp:
                 tag = f"top_strongs_{idx}_{code}"
 
                 self.reader.tag_add(tag, start_idx, f"{end_idx}+1c")
-                self._bind_reader_strongs_tag(tag, code)
+                self.reader.tag_configure(tag, foreground="blue", underline=1)
+                self.reader.tag_bind(
+                    tag,
+                    "<Button-1>",
+                    lambda e, c=code: self._safe_open_strongs_code(str(c))
+                )
+                self.reader.tag_bind(
+                    tag,
+                    "<Enter>",
+                    lambda e: self.reader.config(cursor="hand2")
+                )
+                self.reader.tag_bind(
+                    tag,
+                    "<Leave>",
+                    lambda e: self.reader.config(cursor="xterm")
+                )
 
                 if idx < max_items - 1:
                     self.reader.insert("end", "  •  ", ())
@@ -1253,11 +1051,6 @@ class UltimateBibleApp:
         self.status_var.set(f"Loaded {pretty_ref(verse.book, verse.chapter, verse.verse)}")
         self.refresh_crossrefs_panel()
         self.refresh_compare_panel()
-
-        try:
-            self._warm_visible_strongs_cache()
-        except Exception:
-            pass
 
     def update_semantic_topics_panel(self, topics):
         try:
@@ -2102,15 +1895,24 @@ class UltimateBibleApp:
     def run_semantic_search_for_query(self, query: str):
         self.search_entry.delete(0, "end")
         self.search_entry.insert(0, query)
+        try:
+            self._ensure_semantic_engine()
+        except Exception as exc:
+            self.search_results.delete("1.0", "end")
+            self.search_results.insert("end", f"Could not load semantic engine:\n{exc}")
+            return
         self._run_semantic_search_threaded(query)
 
     def run_semantic_search(self) -> None:
-        if self.semantic_engine is None:
-            self.status_var.set("Semantic engine is still loading...")
-            return
         query = self.search_entry.get().strip()
         if not query:
             self.search_results.delete("1.0", "end")
+            return
+        try:
+            self._ensure_semantic_engine()
+        except Exception as exc:
+            self.search_results.delete("1.0", "end")
+            self.search_results.insert("end", f"Could not load semantic engine:\n{exc}")
             return
         self._run_semantic_search_threaded(query)
 
@@ -2133,49 +1935,58 @@ class UltimateBibleApp:
         text.configure(state="disabled")
 
     def run_ai_assistant(self) -> None:
-        if self.study_assistant is None:
-            self.status_var.set("Study assistant is still loading...")
-            return
         question = self.question_entry.get().strip() if hasattr(self, "question_entry") else ""
         if not question:
             question = "What does this verse teach?"
-        answer = self.study_assistant.answer(question)
+        try:
+            assistant = self._ensure_study_assistant()
+        except Exception as exc:
+            self.status_var.set("Study assistant failed to load")
+            messagebox.showerror("Study Guide", f"Could not load study assistant:\n\n{exc}")
+            return
+        answer = assistant.answer(question)
         self.render_study_guide(answer)
         self.build_study_question_buttons(answer)
         self.status_var.set("Study guide generated")
 
     def _bind_commentary_strongs_tag(self, tag: str, code: str):
-        code = str(code or "").strip().upper()
-        if code.isdigit():
-            code = f"G{code}"
+        self.commentary_output.tag_configure(
+            tag,
+            foreground="blue",
+            underline=1
+        )
 
-        self.commentary_output.tag_configure(tag, foreground="blue", underline=1)
         self.commentary_output.tag_bind(
             tag,
             "<Button-1>",
-            lambda e, c=code: self._safe_open_strongs_code(str(c), event=e)
+            lambda e, c=code: self._safe_open_strongs_code(str(c))
         )
-        self.commentary_output.tag_bind(
-            tag,
-            "<Button-3>",
-            lambda e, c=code: self._show_strongs_context_menu(e, str(c))
-        )
+
         self.commentary_output.tag_bind(
             tag,
             "<Enter>",
-            lambda e, t=tag, c=code: (
+            lambda e, t=tag: (
                 self.commentary_output.config(cursor="hand2"),
-                self.commentary_output.tag_configure(t, foreground="blue", underline=1, background="#eef6ff"),
-                self._show_strongs_tooltip(e, str(c))
+                self.commentary_output.tag_configure(
+                    t,
+                    foreground="blue",
+                    underline=1,
+                    background="#eef6ff"
+                )
             )
         )
+
         self.commentary_output.tag_bind(
             tag,
             "<Leave>",
             lambda e, t=tag: (
                 self.commentary_output.config(cursor="xterm"),
-                self.commentary_output.tag_configure(t, foreground="blue", underline=1, background=""),
-                self._hide_strongs_tooltip()
+                self.commentary_output.tag_configure(
+                    t,
+                    foreground="blue",
+                    underline=1,
+                    background=""
+                )
             )
         )
 
@@ -2238,9 +2049,6 @@ class UltimateBibleApp:
         self.run_strongs_lookup()
 
     def run_strongs_lookup(self) -> None:
-        if self.strongs_engine is None:
-            self.status_var.set("Strong's engine is still loading...")
-            return
         query = self.strongs_query_var.get().strip()
         self.commentary_output.delete("1.0", "end")
         if not query:
@@ -2248,7 +2056,12 @@ class UltimateBibleApp:
         verse = self.current_verse()
         word_map = self.build_top_clickable_strongs_list(verse.book, verse.chapter, verse.verse, verse.translation) if verse else []
         if query[:1].upper() in {"G", "H"} and query[1:].isdigit():
-            result = self.strongs_engine.study_code(query)
+            try:
+                strongs_engine = self._ensure_strongs_engine()
+            except Exception as exc:
+                self.commentary_output.insert("end", f"Could not load Strong's engine:\n{exc}")
+                return
+            result = strongs_engine.study_code(query)
             if result.entry is None:
                 self.commentary_output.insert("end", f"No Strong's entry found for {query.upper()}.\n")
             else:
