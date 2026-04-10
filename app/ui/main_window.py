@@ -73,12 +73,11 @@ class UltimateBibleApp:
         self._semantic_search_counter = itertools.count(1)
         self._active_semantic_search_token = 0
         self._strongs_result_cache = {}
-        self._engine_cache = {}
         self._strongs_tooltip = None
         self._strongs_popup = None
         self.build_ui()
         self.start_map_callback_server()
-        self.root.after(100, self._startup_activate_translation)
+        self.root.after(100, lambda: self.display_current_verse(skip_heavy_panels=True))
 
     def build_ui(self) -> None:
         self.build_menu()
@@ -130,82 +129,61 @@ class UltimateBibleApp:
 
     def rebuild_semantic_index(self) -> None:
         translation = (self.translation_var.get() or "").strip().lower()
-        self.status_var.set(f"Resetting translation resources for {translation.upper()}...")
-        self._engine_cache.pop(translation, None)
         self.semantic_engine = None
-        self.strongs_engine = None
         self.study_assistant = None
-        self._strongs_result_cache.clear()
-        try:
-            if hasattr(self, "search_results"):
-                self.search_results.delete("1.0", "end")
-                self.search_results.insert("end", f"Resources reset for {translation.upper()}\n")
-        except Exception:
-            pass
+        self.status_var.set(f"Semantic engine reset for {translation.upper()}")
 
-    def _startup_activate_translation(self) -> None:
-        translation = (self.translation_var.get() or "").strip().lower() or "kjv"
-        self.status_var.set(f"Ready: {translation.upper()}")
-        try:
-            self.display_current_verse()
-        except Exception:
-            pass
+        if hasattr(self, "search_results"):
+            try:
+                self.search_results.delete("1.0", "end")
+                self.search_results.insert("end", f"Semantic engine will rebuild on next search for {translation.upper()}\n")
+            except Exception:
+                pass
 
     def _ensure_semantic_engine(self):
-        translation = (self.translation_var.get() or "").strip().lower() or "kjv"
-        cache = self._engine_cache.setdefault(translation, {})
-        engine = cache.get("semantic")
-        if engine is None:
+        translation = (self.translation_var.get() or "").strip().lower()
+        if self.semantic_engine is None:
             self.status_var.set(f"Loading semantic engine for {translation.upper()}...")
-            engine = SemanticSearchEngine(self.db, translation=translation)
-            cache["semantic"] = engine
-        self.semantic_engine = engine
-        return engine
+            self.semantic_engine = SemanticSearchEngine(self.db, translation=translation)
+        return self.semantic_engine
 
     def _ensure_strongs_engine(self):
-        translation = (self.translation_var.get() or "").strip().lower() or "kjv"
-        cache = self._engine_cache.setdefault(translation, {})
-        engine = cache.get("strongs")
-        if engine is None:
+        translation = (self.translation_var.get() or "").strip().lower()
+        if self.strongs_engine is None:
             self.status_var.set(f"Loading Strong's engine for {translation.upper()}...")
-            engine = StrongsWordStudyEngine(self.db, translation=translation)
-            cache["strongs"] = engine
-        self.strongs_engine = engine
-        return engine
+            self.strongs_engine = StrongsWordStudyEngine(self.db, translation=translation)
+        return self.strongs_engine
 
     def _ensure_study_assistant(self):
-        translation = (self.translation_var.get() or "").strip().lower() or "kjv"
-        cache = self._engine_cache.setdefault(translation, {})
-        assistant = cache.get("assistant")
-        if assistant is None:
+        if self.study_assistant is None:
             semantic_engine = self._ensure_semantic_engine()
             strongs_engine = self._ensure_strongs_engine()
-            assistant = AIBibleStudyAssistant(semantic_engine, strongs_engine)
-            cache["assistant"] = assistant
-        self.study_assistant = assistant
-        return assistant
+            self.study_assistant = AIBibleStudyAssistant(semantic_engine, strongs_engine)
+        return self.study_assistant
 
     def on_translation_change(self) -> None:
         translation = (self.translation_var.get() or "").strip().lower()
-        self.status_var.set(f"Translation changed to {translation.upper()}")
 
         try:
-            self._hide_strongs_tooltip()
+            self.strongs_query_var.set(self.strongs_query_var.get())
         except Exception:
             pass
 
         self._strongs_result_cache.clear()
-
-        # Drop heavy engines; rebuild only when actually needed later.
         self.semantic_engine = None
         self.strongs_engine = None
         self.study_assistant = None
 
-        # Only redraw the verse text right now.
         try:
             self.display_current_verse(skip_heavy_panels=True)
         except Exception as exc:
-            messagebox.showerror("Translation", f"Could not refresh verse:\n\n{exc}")
+            try:
+                messagebox.showerror("Translation", f"Could not refresh verse:\n\n{exc}")
+            except Exception:
+                pass
+            return
+
+        self.status_var.set(f"Translation changed to {translation.upper()}")
 
     def prettify_reference_label(self, text: str) -> str:
         value = (text or "").strip()
@@ -472,25 +450,6 @@ class UltimateBibleApp:
         self.commentary_output.pack(fill="both", expand=True, padx=6, pady=6)
 
 
-    def _safe_open_strongs_code(self, code: str):
-        code = str(code or "").strip().upper()
-        if not code:
-            return
-        if code.isdigit():
-            code = f"G{code}"
-
-        try:
-            result = self.strongs_engine.study_code(code)
-        except Exception as exc:
-            try:
-                messagebox.showerror("Strong's Lookup", f"Could not open Strong's code {code}: {exc}")
-            except Exception:
-                pass
-            return
-
-        self.show_strongs_result_popup(code, result)
-
-
     def refresh_after_dataset_change(self):
         try:
             self.crossref_engine = CrossReferenceEngine() if CrossReferenceEngine else None
@@ -510,20 +469,27 @@ class UltimateBibleApp:
         except Exception:
             pass
 
-    def _safe_open_strongs_code(self, code: str):
+    def _safe_open_strongs_code(self, code: str, event=None):
         code = str(code or "").strip().upper()
         if not code:
             return
         if code.isdigit():
             code = f"G{code}"
 
+        cached = self._strongs_result_cache.get(code)
+        if cached is not None:
+            self.show_strongs_result_popup(code, cached)
+            return
+
         try:
-            result = self.strongs_engine.study_code(code)
+            strongs_engine = self._ensure_strongs_engine()
+            result = strongs_engine.study_code(code)
+            self._strongs_result_cache[code] = result
         except Exception as exc:
-            messagebox.showerror(
-                "Strong's Lookup",
-                f"Could not open Strong's code {code}: {exc}"
-            )
+            try:
+                messagebox.showerror("Strong's Lookup", f"Could not open Strong's code {code}: {exc}")
+            except Exception:
+                pass
             return
 
         self.show_strongs_result_popup(code, result)
@@ -933,7 +899,7 @@ class UltimateBibleApp:
             if i < len(words):
                 self.reader.insert("end", " ")
 
-    def display_current_verse(self, startup: bool = False) -> None:
+    def display_current_verse(self, startup: bool = False, skip_heavy_panels: bool = False) -> None:
         requested_book = self.normalize_current_book()
         try:
             requested_chapter = int(self.chapter_var.get() or 1)
@@ -954,8 +920,9 @@ class UltimateBibleApp:
         if verse is None:
             self.reader.insert("end", "Verse not found in the database. Import Bible text or change the reference.")
             self.status_var.set("Verse not found")
-            self.refresh_crossrefs_panel()
-            self.refresh_compare_panel()
+            if not skip_heavy_panels:
+                self.refresh_crossrefs_panel()
+                self.refresh_compare_panel()
             return
 
         self.book_var.set(verse.book)
@@ -1042,27 +1009,9 @@ class UltimateBibleApp:
 
         self.update_semantic_topics_panel(topics)
         self.status_var.set(f"Loaded {pretty_ref(verse.book, verse.chapter, verse.verse)}")
-        if not skip_heavy_panles:
+        if not skip_heavy_panels:
             self.refresh_crossrefs_panel()
             self.refresh_compare_panel()
-
-    def _ensure_semantic_engine(self):
-        if self.semantic_engine is None:
-            self.semantic_engine = SemanticSearchEngine(self.db, translation=self.translation_var.get())
-        return self.semantic_engine
-
-    def _ensure_strongs_engine(self):
-        if self.strongs_engine is None:
-            self.strongs_engine = StrongsWordStudyEngine(self.db, translation=self.translation_var.get())
-        return self.strongs_engine
-
-    def _ensure_study_assistant(self):
-        if self.study_assistant is None:
-            self.study_assistant = AIBibleStudyAssistant(
-                self._ensure_semantic_engine(),
-                self._ensure_strongs_engine(),
-            )
-        return self.study_assistant
 
     def update_semantic_topics_panel(self, topics):
         try:
@@ -1907,24 +1856,19 @@ class UltimateBibleApp:
     def run_semantic_search_for_query(self, query: str):
         self.search_entry.delete(0, "end")
         self.search_entry.insert(0, query)
-        try:
-            self._ensure_semantic_engine()
-        except Exception as exc:
-            self.search_results.delete("1.0", "end")
-            self.search_results.insert("end", f"Could not load semantic engine:\n{exc}")
-            return
         self._run_semantic_search_threaded(query)
 
     def run_semantic_search(self) -> None:
         query = self.search_entry.get().strip()
-        if not query:
-            self.search_results.delete("1.0", "end")
-            return
         try:
             self._ensure_semantic_engine()
         except Exception as exc:
             self.search_results.delete("1.0", "end")
             self.search_results.insert("end", f"Could not load semantic engine:\n{exc}")
+            self.status_var.set("Semantic engine load failed")
+            return
+        if not query:
+            self.search_results.delete("1.0", "end")
             return
         self._run_semantic_search_threaded(query)
 
@@ -1951,12 +1895,15 @@ class UltimateBibleApp:
         if not question:
             question = "What does this verse teach?"
         try:
-            assistant = self._ensure_study_assistant()
+            study_assistant = self._ensure_study_assistant()
         except Exception as exc:
-            self.status_var.set("Study assistant failed to load")
-            messagebox.showerror("Study Guide", f"Could not load study assistant:\n\n{exc}")
+            try:
+                messagebox.showerror("Study Guide", f"Could not load study assistant:\n\n{exc}")
+            except Exception:
+                pass
+            self.status_var.set("Study assistant load failed")
             return
-        answer = assistant.answer(question)
+        answer = study_assistant.answer(question)
         self.render_study_guide(answer)
         self.build_study_question_buttons(answer)
         self.status_var.set("Study guide generated")
@@ -2065,20 +2012,34 @@ class UltimateBibleApp:
         self.commentary_output.delete("1.0", "end")
         if not query:
             return
+
         verse = self.current_verse()
-        word_map = self.build_top_clickable_strongs_list(verse.book, verse.chapter, verse.verse, verse.translation) if verse else []
-        if query[:1].upper() in {"G", "H"} and query[1:].isdigit():
+        word_map = self.build_top_clickable_strongs_list(
+            verse.book, verse.chapter, verse.verse, verse.translation
+        ) if verse else []
+
+        try:
+            strongs_engine = self._ensure_strongs_engine()
+        except Exception as exc:
+            self.commentary_output.insert("end", f"Could not load Strong's engine:\n{exc}")
+            self.status_var.set("Strong's engine load failed")
+            return
+
+        normalized = query.upper()
+        if normalized[:1] in {"G", "H"} and normalized[1:].isdigit():
             try:
-                strongs_engine = self._ensure_strongs_engine()
+                result = strongs_engine.study_code(normalized)
+                self._strongs_result_cache[normalized] = result
             except Exception as exc:
-                self.commentary_output.insert("end", f"Could not load Strong's engine:\n{exc}")
+                self.commentary_output.insert("end", f"Could not open Strong's code {normalized}:\n{exc}")
+                self.status_var.set("Strong's lookup failed")
                 return
-            result = strongs_engine.study_code(query)
+
             if result.entry is None:
-                self.commentary_output.insert("end", f"No Strong's entry found for {query.upper()}.\n")
+                self.commentary_output.insert("end", f"No Strong's entry found for {normalized}.\n")
             else:
                 entry = result.entry
-                matching_words = [w for w, c in word_map if c.upper() == query.upper()]
+                matching_words = [w for w, c in word_map if c.upper() == normalized]
                 if matching_words:
                     self.commentary_output.insert("end", f"Word(s): {', '.join(sorted(set(matching_words)))}\n")
                 self.commentary_output.insert("end", f"{entry.strongs_id} — {entry.lemma}\n")
@@ -2087,23 +2048,43 @@ class UltimateBibleApp:
                 self.commentary_output.insert("end", f"Gloss: {entry.gloss or 'N/A'}\n\n")
                 self.commentary_output.insert("end", f"Definition\n{entry.definition}\n\n")
                 self.commentary_output.insert("end", "Occurrences\n")
-                for occ in result.occurrences:
+                for occ in getattr(result, "occurrences", []) or []:
                     self.commentary_output.insert("end", f"- {occ}\n")
-            self.status_var.set(f"Strong's lookup complete: {query.upper()}")
+            self.status_var.set(f"Strong's lookup complete: {normalized}")
             return
-        hits = self.strongs_engine.search(query)
+
+        try:
+            hits = strongs_engine.search(query)
+        except Exception as exc:
+            self.commentary_output.insert("end", f"Strong's search failed:\n{exc}")
+            self.status_var.set("Strong's search failed")
+            return
+
         if not hits:
             self.commentary_output.insert("end", f"No Strong's entries found for '{query}'.")
-            self.status_var.set("No Strong's matches")
+            self.status_var.set("No Strong's matches found")
             return
+
         self.commentary_output.insert("end", f"Strong's search results for '{query}'\n\n")
-        for hit in hits:
-            linked_words = [w for w, c in word_map if c.upper() == hit.strongs_id.upper()]
-            if linked_words:
-                self.commentary_output.insert("end", f"Word(s): {', '.join(sorted(set(linked_words)))}\n")
-            self.commentary_output.insert("end", f"{hit.strongs_id} — {hit.lemma} ({hit.transliteration})\n")
-            self.commentary_output.insert("end", f"{hit.definition}\n\n")
-        self.status_var.set(f"Strong's search complete: {len(hits)} hits")
+        for idx, hit in enumerate(hits[:25], start=1):
+            strongs_id = getattr(hit, "strongs_id", "") or getattr(hit, "code", "")
+            lemma = getattr(hit, "lemma", "") or ""
+            transliteration = getattr(hit, "transliteration", "") or "N/A"
+            gloss = getattr(hit, "gloss", "") or "N/A"
+
+            label = f"{idx}. {strongs_id} — {lemma}\n"
+            start = self.commentary_output.index("end")
+            self.commentary_output.insert("end", label)
+            end = self.commentary_output.index("end")
+
+            tag = f"strongs_search_hit_{idx}_{strongs_id}"
+            self.commentary_output.tag_add(tag, start, end)
+            self._bind_commentary_strongs_tag(tag, strongs_id)
+
+            self.commentary_output.insert("end", f"   Transliteration: {transliteration}\n")
+            self.commentary_output.insert("end", f"   Gloss: {gloss}\n\n")
+
+        self.status_var.set(f"Strong's search complete: {query}")
 
     def export_graph(self) -> None:
         try:
