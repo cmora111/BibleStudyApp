@@ -186,33 +186,26 @@ class UltimateBibleApp:
         return assistant
 
     def on_translation_change(self) -> None:
-        translation = (self.translation_var.get() or "").strip().lower() or "kjv"
+        translation = (self.translation_var.get() or "").strip().lower()
+        self.status_var.set(f"Translation changed to {translation.upper()}")
 
+        try:
+            self._hide_strongs_tooltip()
+        except Exception:
+            pass
+
+        self._strongs_result_cache.clear()
+
+        # Drop heavy engines; rebuild only when actually needed later.
         self.semantic_engine = None
         self.strongs_engine = None
         self.study_assistant = None
-        self._strongs_result_cache.clear()
 
+        # Only redraw the verse text right now.
         try:
-            if self._strongs_tooltip is not None:
-                self._strongs_tooltip.destroy()
-        except Exception:
-            pass
-        self._strongs_tooltip = None
-
-        try:
-            self.display_current_verse()
-        except Exception:
-            pass
-
-        try:
-            if hasattr(self, "search_results"):
-                self.search_results.delete("1.0", "end")
-                self.search_results.insert("end", f"Translation changed to {translation.upper()}\nSemantic search engine will load on first use.\n")
-        except Exception:
-            pass
-
-        self.status_var.set(f"Translation changed to {translation.upper()}")
+            self.display_current_verse(skip_heavy_panels=True)
+        except Exception as exc:
+            messagebox.showerror("Translation", f"Could not refresh verse:\n\n{exc}")
 
     def prettify_reference_label(self, text: str) -> str:
         value = (text or "").strip()
@@ -1049,8 +1042,27 @@ class UltimateBibleApp:
 
         self.update_semantic_topics_panel(topics)
         self.status_var.set(f"Loaded {pretty_ref(verse.book, verse.chapter, verse.verse)}")
-        self.refresh_crossrefs_panel()
-        self.refresh_compare_panel()
+        if not skip_heavy_panles:
+            self.refresh_crossrefs_panel()
+            self.refresh_compare_panel()
+
+    def _ensure_semantic_engine(self):
+        if self.semantic_engine is None:
+            self.semantic_engine = SemanticSearchEngine(self.db, translation=self.translation_var.get())
+        return self.semantic_engine
+
+    def _ensure_strongs_engine(self):
+        if self.strongs_engine is None:
+            self.strongs_engine = StrongsWordStudyEngine(self.db, translation=self.translation_var.get())
+        return self.strongs_engine
+
+    def _ensure_study_assistant(self):
+        if self.study_assistant is None:
+            self.study_assistant = AIBibleStudyAssistant(
+                self._ensure_semantic_engine(),
+                self._ensure_strongs_engine(),
+            )
+        return self.study_assistant
 
     def update_semantic_topics_panel(self, topics):
         try:
