@@ -77,6 +77,7 @@ class UltimateBibleApp:
         self._strongs_tooltip_label = None
         self._strongs_hover_after = None
         self._strongs_popup = None
+        self._strongs_tooltip_code = None
         self._last_highlighted_map = None
         self._last_selected_event_map_id = None
         self._full_timeline_map_output = None
@@ -564,26 +565,24 @@ class UltimateBibleApp:
         tip = getattr(self, "_strongs_tooltip", None)
         if tip is not None:
             try:
-                tip.destroy()
+                tip.withdraw()
             except Exception:
-                pass
-            self._strongs_tooltip = None
-            self._strongs_tooltip_label = None
+                try:
+                    tip.destroy()
+                except Exception:
+                    pass
+        self._strongs_tooltip_code = None
 
-    def _show_strongs_tooltip(self, event, code: str):
-        code = str(code or "").strip().upper()
-        if code.isdigit():
-            code = f"G{code}"
+    def _update_strongs_tooltip_from_result(self, code: str, result):
+        if getattr(self, "_strongs_tooltip_code", None) != code:
+            return
 
-        cached = self._strongs_result_cache.get(code)
-        if cached is None:
-            try:
-                cached = self.strongs_engine.study_code(code)
-                self._strongs_result_cache[code] = cached
-            except Exception:
-                cached = None
+        label = getattr(self, "_strongs_tooltip_label", None)
+        tip = getattr(self, "_strongs_tooltip", None)
+        if label is None or tip is None:
+            return
 
-        entry = getattr(cached, "entry", None) if cached is not None else None
+        entry = getattr(result, "entry", None) if result is not None else None
         lemma = getattr(entry, "lemma", "") if entry else ""
         gloss = getattr(entry, "gloss", "") if entry else ""
         definition = getattr(entry, "definition", "") if entry else ""
@@ -599,7 +598,19 @@ class UltimateBibleApp:
                 definition = definition[:257].rstrip() + "..."
             parts.append(definition)
 
-        tooltip_text = "\n".join(parts)
+        try:
+            label.config(text="\n".join(parts))
+            tip.deiconify()
+            tip.lift()
+        except Exception:
+            pass
+
+    def _show_strongs_tooltip(self, event, code: str):
+        code = str(code or "").strip().upper()
+        if code.isdigit():
+            code = f"G{code}"
+
+        self._strongs_tooltip_code = code
 
         x = getattr(event, "x_root", self.root.winfo_rootx() + 60) + 14
         y = getattr(event, "y_root", self.root.winfo_rooty() + 60) + 14
@@ -638,15 +649,39 @@ class UltimateBibleApp:
                 return
 
         try:
-            self._strongs_tooltip.title(f"Strong's Preview - {code}")
+            tip.title(f"Strong's Preview - {code}")
+            label.config(text=f"Strong's {code}\nLoading...")
+            tip.geometry(f"420x160+{x}+{y}")
+            tip.deiconify()
+            tip.lift()
         except Exception:
             pass
 
+        cached = self._strongs_result_cache.get(code)
+        if cached is not None:
+            self._update_strongs_tooltip_from_result(code, cached)
+            return
+
+        def worker():
+            try:
+                result = self.strongs_engine.study_code(code)
+            except Exception:
+                result = None
+
+            def finish():
+                if getattr(self, "_strongs_tooltip_code", None) != code:
+                    return
+                if result is not None:
+                    self._strongs_result_cache[code] = result
+                self._update_strongs_tooltip_from_result(code, result)
+
+            try:
+                self.root.after(0, finish)
+            except Exception:
+                pass
+
         try:
-            self._strongs_tooltip_label.config(text=tooltip_text)
-            self._strongs_tooltip.geometry(f"420x160+{x}+{y}")
-            self._strongs_tooltip.deiconify()
-            self._strongs_tooltip.lift()
+            threading.Thread(target=worker, daemon=True).start()
         except Exception:
             pass
 
@@ -999,16 +1034,7 @@ class UltimateBibleApp:
                 self._show_strongs_tooltip(e, str(c))
             )
         )
-        self.reader.tag_bind(
-            tag,
-            "<Motion>",
-            lambda e, t=tag, c=code: (
-                self.reader.config(cursor="hand2"),
-                self.reader.tag_configure(t, foreground="blue", underline=1, background="#eef6ff"),
-                self._show_strongs_tooltip(e, str(c))
-            )
-        )
-        self.reader.tag_bind(
+                self.reader.tag_bind(
             tag,
             "<Leave>",
             lambda e, t=tag: (
@@ -2127,16 +2153,7 @@ class UltimateBibleApp:
                 self._show_strongs_tooltip(e, str(c))
             )
         )
-        self.commentary_output.tag_bind(
-            tag,
-            "<Motion>",
-            lambda e, t=tag, c=code: (
-                self.commentary_output.config(cursor="hand2"),
-                self.commentary_output.tag_configure(t, foreground="blue", underline=1, background="#eef6ff"),
-                self._show_strongs_tooltip(e, str(c))
-            )
-        )
-        self.commentary_output.tag_bind(
+                self.commentary_output.tag_bind(
             tag,
             "<Leave>",
             lambda e, t=tag: (
