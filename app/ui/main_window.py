@@ -561,12 +561,14 @@ class UltimateBibleApp:
                 pass
             self._strongs_hover_after = None
 
-        panel = getattr(self, "_strongs_tooltip", None)
-        if panel is not None:
+        tip = getattr(self, "_strongs_tooltip", None)
+        if tip is not None:
             try:
-                panel.place_forget()
+                tip.destroy()
             except Exception:
                 pass
+            self._strongs_tooltip = None
+            self._strongs_tooltip_label = None
 
     def _show_strongs_tooltip(self, event, code: str):
         code = str(code or "").strip().upper()
@@ -586,59 +588,55 @@ class UltimateBibleApp:
         gloss = getattr(entry, "gloss", "") if entry else ""
         definition = getattr(entry, "definition", "") if entry else ""
 
-        parts = [code]
+        parts = [f"Strong's {code}"]
         if lemma:
             parts.append(f"Lemma: {lemma}")
         if gloss:
             parts.append(f"Gloss: {gloss}")
         if definition:
             definition = str(definition).replace("\r", " ").replace("\n", " ").strip()
-            if len(definition) > 220:
-                definition = definition[:217].rstrip() + "..."
+            if len(definition) > 260:
+                definition = definition[:257].rstrip() + "..."
             parts.append(definition)
 
         tooltip_text = "\n".join(parts)
-
-        if self._strongs_tooltip is None or self._strongs_tooltip_label is None:
-            panel = tk.Frame(self.root, bg="#fff8dc", bd=1, relief="solid")
-            label = tk.Label(
-                panel,
-                bg="#fff8dc",
-                justify="left",
-                anchor="w",
-                wraplength=420,
-                padx=6,
-                pady=4,
-            )
-            label.pack(fill="both", expand=True)
-            self._strongs_tooltip = panel
-            self._strongs_tooltip_label = label
-
-        self._strongs_tooltip_label.config(text=tooltip_text)
-
-        x = getattr(event, "x_root", 0) - self.root.winfo_rootx() + 16
-        y = getattr(event, "y_root", 0) - self.root.winfo_rooty() + 16
-
-        # Keep tooltip inside the root window as best we can
-        try:
-            self.root.update_idletasks()
-            max_x = max(0, self.root.winfo_width() - 440)
-            max_y = max(0, self.root.winfo_height() - 160)
-            x = max(8, min(x, max_x))
-            y = max(8, min(y, max_y))
-        except Exception:
-            pass
-
         self._hide_strongs_tooltip()
 
-        def _place():
-            try:
-                self._strongs_tooltip.place(x=x, y=y)
-                self._strongs_tooltip.lift()
-            except Exception:
-                pass
+        x = getattr(event, "x_root", self.root.winfo_rootx() + 60) + 14
+        y = getattr(event, "y_root", self.root.winfo_rooty() + 60) + 14
 
-        self._strongs_hover_after = self.root.after(120, _place)
+        def _create():
+            try:
+                tip = tk.Toplevel(self.root)
+                tip.title(f"Strong's Preview - {code}")
+                tip.transient(self.root)
+                tip.resizable(False, False)
+                tip.geometry(f"420x160+{x}+{y}")
+
+                outer = ttk.Frame(tip, padding=8)
+                outer.pack(fill="both", expand=True)
+
+                label = tk.Label(
+                    outer,
+                    text=tooltip_text,
+                    justify="left",
+                    anchor="nw",
+                    bg="#fff8dc",
+                    relief="solid",
+                    borderwidth=1,
+                    padx=8,
+                    pady=6,
+                    wraplength=380,
+                )
+                label.pack(fill="both", expand=True)
+
+                self._strongs_tooltip = tip
+                self._strongs_tooltip_label = label
+            except Exception:
+                self._strongs_tooltip = None
+                self._strongs_tooltip_label = None
+
+        self._strongs_hover_after = self.root.after(120, _create)
 
     def copy_text_to_clipboard(self, text: str):
         try:
