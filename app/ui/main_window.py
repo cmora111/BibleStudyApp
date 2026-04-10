@@ -1034,7 +1034,7 @@ class UltimateBibleApp:
                 self._show_strongs_tooltip(e, str(c))
             )
         )
-                self.reader.tag_bind(
+        self.reader.tag_bind(
             tag,
             "<Leave>",
             lambda e, t=tag: (
@@ -2153,7 +2153,7 @@ class UltimateBibleApp:
                 self._show_strongs_tooltip(e, str(c))
             )
         )
-                self.commentary_output.tag_bind(
+        self.commentary_output.tag_bind(
             tag,
             "<Leave>",
             lambda e, t=tag: (
