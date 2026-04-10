@@ -57,9 +57,9 @@ class UltimateBibleApp:
         self.import_format_var = tk.StringVar(value="auto")
         self.lexicon_format_var = tk.StringVar(value="auto")
 
-        self.semantic_engine = SemanticSearchEngine(self.db, translation=self.translation_var.get())
-        self.strongs_engine = StrongsWordStudyEngine(self.db, translation=self.translation_var.get())
-        self.study_assistant = AIBibleStudyAssistant(self.semantic_engine, self.strongs_engine)
+        self.semantic_engine = None
+        self.strongs_engine = None
+        self.study_assistant = None
         self.crossref_engine = CrossReferenceEngine() if CrossReferenceEngine else None
         self.timeline_engine = BibleTimelineEngine("data/timeline_events.csv")
         self.map_engine = BibleMapEngine()
@@ -76,14 +76,14 @@ class UltimateBibleApp:
         self._strongs_tooltip = None
         self._strongs_tooltip_label = None
         self._strongs_hover_after = None
-        self._strongs_popup = None
         self._strongs_tooltip_code = None
-        self._last_highlighted_map = None
-        self._last_selected_event_map_id = None
-        self._full_timeline_map_output = None
+        self._strongs_popup = None
+        self._engine_cache = {}
+        self._engine_building = set()
+        self._active_translation_load = None
         self.build_ui()
         self.start_map_callback_server()
-        self.root.after(100, self.display_current_verse)
+        self.root.after(100, lambda: self._activate_translation(self.translation_var.get(), refresh_ui=True))
 
     def build_ui(self) -> None:
         self.build_menu()
@@ -135,39 +135,109 @@ class UltimateBibleApp:
 
     def rebuild_semantic_index(self) -> None:
         translation = (self.translation_var.get() or "").strip().lower()
-        self.status_var.set("Rebuilding semantic index...")
+        self.status_var.set(f"Reloading {translation.upper()} resources...")
+        self._strongs_result_cache.clear()
+        self._engine_cache.pop(translation, None)
+        self._activate_translation(translation, refresh_ui=True, force_rebuild=True)
+
+    def _apply_translation_engines(self, translation: str, semantic_engine, strongs_engine, study_assistant) -> None:
+        self.semantic_engine = semantic_engine
+        self.strongs_engine = strongs_engine
+        self.study_assistant = study_assistant
+        self._engine_cache[translation] = (semantic_engine, strongs_engine, study_assistant)
+
+    def _activate_translation(self, translation: str, refresh_ui: bool = True, force_rebuild: bool = False) -> None:
+        translation = (translation or "").strip().lower()
+        if not translation:
+            translation = "kjv"
+
+        self._active_translation_load = translation
+
+        cached = None if force_rebuild else self._engine_cache.get(translation)
+        if cached is not None:
+            self._apply_translation_engines(translation, *cached)
+            self.status_var.set(f"Translation ready: {translation.upper()}")
+            if refresh_ui:
+                try:
+                    self.display_current_verse()
+                except Exception:
+                    pass
+            return
+
+        if translation in self._engine_building:
+            self.status_var.set(f"Loading {translation.upper()} resources...")
+            return
+
+        self._engine_building.add(translation)
+        self.status_var.set(f"Loading {translation.upper()} resources...")
+
+        def worker():
+            try:
+                semantic_engine = SemanticSearchEngine(self.db, translation=translation)
+                strongs_engine = StrongsWordStudyEngine(self.db, translation=translation)
+                study_assistant = AIBibleStudyAssistant(semantic_engine, strongs_engine)
+                result = (semantic_engine, strongs_engine, study_assistant, None)
+            except Exception as exc:
+                result = (None, None, None, exc)
+
+            def finish():
+                self._engine_building.discard(translation)
+                semantic_engine, strongs_engine, study_assistant, err = result
+                if err is not None:
+                    self.status_var.set(f"Failed to load {translation.upper()}")
+                    try:
+                        messagebox.showerror("Translation", f"Could not load {translation.upper()}:\n\n{err}")
+                    except Exception:
+                        pass
+                    return
+
+                if self._active_translation_load != translation:
+                    self._engine_cache[translation] = (semantic_engine, strongs_engine, study_assistant)
+                    return
+
+                self._apply_translation_engines(translation, semantic_engine, strongs_engine, study_assistant)
+                self.status_var.set(f"Translation ready: {translation.upper()}")
+                if refresh_ui:
+                    try:
+                        self.display_current_verse()
+                    except Exception:
+                        pass
+
+            try:
+                self.root.after(0, finish)
+            except Exception:
+                pass
+
         try:
-            self.semantic_engine = SemanticSearchEngine(self.db, translation=translation)
-            self.strongs_engine = StrongsWordStudyEngine(self.db, translation=translation)
-            self.study_assistant = AIBibleStudyAssistant(self.semantic_engine, self.strongs_engine)
-            if hasattr(self, "search_results"):
-                self.search_results.delete("1.0", "end")
-                self.search_results.insert("end", f"Semantic index rebuilt for {translation.upper()}\n")
-            self.status_var.set(f"Semantic index rebuilt for {translation.upper()}")
+            threading.Thread(target=worker, daemon=True).start()
         except Exception as exc:
-            self.status_var.set("Semantic index rebuild failed")
-            messagebox.showerror("Semantic Index", f"Could not rebuild semantic index:\n\n{exc}")
+            self._engine_building.discard(translation)
+            self.status_var.set("Translation load failed")
+            try:
+                messagebox.showerror("Translation", f"Could not start loading {translation.upper()}:\n\n{exc}")
+            except Exception:
+                pass
 
     def on_translation_change(self) -> None:
         translation = (self.translation_var.get() or "").strip().lower()
+        self.status_var.set(f"Switching to {translation.upper()}...")
+        self._strongs_result_cache.clear()
+
         try:
-            self.rebuild_semantic_index()
+            self._hide_strongs_tooltip()
         except Exception:
             pass
 
         try:
-            self.strongs_query_var.set(self.strongs_query_var.get())
+            if hasattr(self, "search_results"):
+                self.search_results.delete("1.0", "end")
+                self.search_results.insert("end", f"Loading resources for {translation.upper()}...\n")
         except Exception:
             pass
 
-        try:
-            self.display_current_verse()
-        except Exception:
-            pass
+        self._activate_translation(translation, refresh_ui=True)
 
-        self.status_var.set(f"Translation changed to {translation.upper()}")
-
-    def prettify_reference_label(self, text: str) -> str:
+        def prettify_reference_label(self, text: str) -> str:
         value = (text or "").strip()
 
         mapping = {
@@ -552,7 +622,6 @@ class UltimateBibleApp:
         )
 
 
-
     def _hide_strongs_tooltip(self, event=None):
         after_id = getattr(self, "_strongs_hover_after", None)
         if after_id:
@@ -606,12 +675,17 @@ class UltimateBibleApp:
             pass
 
     def _show_strongs_tooltip(self, event, code: str):
+        translation = (self.translation_var.get() or "").strip().lower()
+        if translation in getattr(self, "_engine_building", set()):
+            return
+        if self.strongs_engine is None:
+            return
+
         code = str(code or "").strip().upper()
         if code.isdigit():
             code = f"G{code}"
 
         self._strongs_tooltip_code = code
-
         x = getattr(event, "x_root", self.root.winfo_rootx() + 60) + 14
         y = getattr(event, "y_root", self.root.winfo_rooty() + 60) + 14
 
@@ -709,6 +783,41 @@ class UltimateBibleApp:
                 menu.grab_release()
             except Exception:
                 pass
+
+    def _warm_visible_strongs_cache(self):
+        if self.strongs_engine is None:
+            return
+        verse = self.current_verse()
+        if verse is None:
+            return
+
+        links = self.build_top_clickable_strongs_list(
+            verse.book, verse.chapter, verse.verse, verse.translation
+        )
+
+        codes = []
+        for _, code in links[:8]:
+            code = str(code or "").strip().upper()
+            if code.isdigit():
+                code = f"G{code}"
+            if code not in self._strongs_result_cache:
+                codes.append(code)
+
+        if not codes:
+            return
+
+        def worker():
+            for code in codes:
+                try:
+                    result = self.strongs_engine.study_code(code)
+                    self._strongs_result_cache[code] = result
+                except Exception:
+                    pass
+
+        try:
+            threading.Thread(target=worker, daemon=True).start()
+        except Exception:
+            pass
 
     def open_dataset_import_wizard(self):
         try:
@@ -1008,41 +1117,10 @@ class UltimateBibleApp:
         self.reader.insert("end", "\n\n", ())
 
     def _bind_reader_strongs_tag(self, tag: str, code: str):
-        code = str(code or "").strip().upper()
-        if code.isdigit():
-            code = f"G{code}"
-
-        self.reader.tag_configure(tag, foreground="blue", underline=1)
-
-        self.reader.tag_bind(
-            tag,
-            "<Button-1>",
-            lambda e, c=code: self._safe_open_strongs_code(str(c), event=e)
-        )
-        self.reader.tag_bind(
-            tag,
-            "<Button-3>",
-            lambda e, c=code: self._show_strongs_context_menu(e, str(c))
-        )
-
-        self.reader.tag_bind(
-            tag,
-            "<Enter>",
-            lambda e, t=tag, c=code: (
-                self.reader.config(cursor="hand2"),
-                self.reader.tag_configure(t, foreground="blue", underline=1, background="#eef6ff"),
-                self._show_strongs_tooltip(e, str(c))
-            )
-        )
-        self.reader.tag_bind(
-            tag,
-            "<Leave>",
-            lambda e, t=tag: (
-                self.reader.config(cursor="xterm"),
-                self.reader.tag_configure(t, foreground="blue", underline=1, background=""),
-                self._hide_strongs_tooltip()
-            )
-        )
+        self.reader.tag_configure(tag, foreground="blue", underline=True)
+        self.reader.tag_bind(tag, "<Button-1>", lambda e, c=code: self._safe_open_strongs_code(str(c)))
+        self.reader.tag_bind(tag, "<Enter>", lambda e: self.reader.config(cursor="hand2"))
+        self.reader.tag_bind(tag, "<Leave>", lambda e: self.reader.config(cursor="xterm"))
 
 
     def _insert_clickable_words(self, text: str, strongs_blob: str, verse=None):
@@ -1175,6 +1253,11 @@ class UltimateBibleApp:
         self.status_var.set(f"Loaded {pretty_ref(verse.book, verse.chapter, verse.verse)}")
         self.refresh_crossrefs_panel()
         self.refresh_compare_panel()
+
+        try:
+            self._warm_visible_strongs_cache()
+        except Exception:
+            pass
 
     def update_semantic_topics_panel(self, topics):
         try:
@@ -1566,44 +1649,23 @@ class UltimateBibleApp:
         if event.latitude is None or event.longitude is None:
             self.timeline_details.delete("1.0", "end")
             self.timeline_details.insert("end", "This event does not have map coordinates.")
-            if hasattr(self, "map_preview_status_var"):
-                self.map_preview_status_var.set("Selected event has no map coordinates.")
             return
 
         try:
-            self.show_timeline_event_details(event)
-        except Exception:
-            pass
-
-        try:
-            self.update_map_explorer_for_event(event, auto_generate=False)
-        except Exception:
-            pass
-
-        try:
-            cache_key = f"{event.id}:selected"
-            output = self._map_cache.get(cache_key)
-            if not output:
-                output = self.map_engine.export_single_event_map(
-                    "exports/bible_timeline_selected_event.html",
-                    event=event,
-                    include_nearby=True,
-                )
-                self._map_cache[cache_key] = output
-            self._last_highlighted_map = output
-            self._last_selected_event_map_id = event.id
+            self.focus_on_event(event, open_compare_tab=False, update_map=True)
+            output = getattr(self, "_last_highlighted_map", None) or self.map_engine.export_single_event_map(
+                "exports/bible_timeline_selected_event.html",
+                event=event,
+                include_nearby=True,
+            )
         except Exception as exc:
             self.timeline_details.delete("1.0", "end")
             self.timeline_details.insert("end", f"Location map export failed: {exc}")
-            if hasattr(self, "map_preview_status_var"):
-                self.map_preview_status_var.set(f"Selected-event map export failed: {exc}")
             return
 
         self.timeline_details.delete("1.0", "end")
         self.timeline_details.insert("end", f"Selected-event map exported to:\n{output}\n\n")
         self.timeline_details.insert("end", f"Centered on: {event.location_name} ({event.title})")
-        if hasattr(self, "map_preview_status_var"):
-            self.map_preview_status_var.set(f"Selected event map ready: {output}")
         try:
             import webbrowser
             webbrowser.open(f"file://{Path(output).resolve()}")
@@ -1623,10 +1685,7 @@ class UltimateBibleApp:
 
     def open_timeline_map(self):
         try:
-            output = self._full_timeline_map_output
-            if not output:
-                output = self.map_engine.export_map("exports/bible_timeline_map.html")
-                self._full_timeline_map_output = output
+            output = self.map_engine.export_map("exports/bible_timeline_map.html")
         except Exception as exc:
             self.timeline_details.delete("1.0", "end")
             self.timeline_details.insert("end", f"Map export failed: {exc}")
@@ -1921,35 +1980,6 @@ class UltimateBibleApp:
         self.timeline_details.insert("end", "\n")
         self.timeline_details.insert("end", event.summary or "(no summary)")
 
-
-    def update_map_explorer_for_event(self, event, auto_generate: bool = False):
-        if hasattr(self, "map_focus_label_var"):
-            try:
-                self.map_focus_label_var.set(
-                    f"Map Focus: {event.title} — {event.location_name or 'Unknown location'}"
-                )
-            except Exception:
-                pass
-
-        if hasattr(self, "map_meta_output"):
-            try:
-                self.map_meta_output.delete("1.0", "end")
-                self.map_meta_output.insert("end", f"{event.title}\n\n")
-                self.map_meta_output.insert("end", f"Reference: {event.reference}\n")
-                self.map_meta_output.insert("end", f"Time: {event.time_label or 'Unknown'}\n")
-                self.map_meta_output.insert("end", f"Location: {event.location_name or 'Unknown'}\n")
-                self.map_meta_output.insert("end", f"Coordinates: {event.latitude}, {event.longitude}\n\n")
-                if event.summary:
-                    self.map_meta_output.insert("end", f"{event.summary}\n")
-            except Exception:
-                pass
-
-        if hasattr(self, "map_preview_status_var"):
-            if event.latitude is None or event.longitude is None:
-                self.map_preview_status_var.set("Selected event has no map coordinates.")
-            else:
-                self.map_preview_status_var.set("Event selected. Use Selected Event Map to open the focused map.")
-
     def highlight_map_event(self, event):
         try:
             cache_key = f"{event.id}:selected"
@@ -1991,27 +2021,9 @@ class UltimateBibleApp:
             pass
 
         try:
-            self.update_map_explorer_for_event(event, auto_generate=False)
+            self.update_map_explorer_for_event(event, auto_generate=update_map)
         except Exception:
             pass
-
-        if update_map and event.latitude is not None and event.longitude is not None:
-            try:
-                cache_key = f"{event.id}:selected"
-                output = self._map_cache.get(cache_key)
-                if not output:
-                    output = self.map_engine.export_single_event_map(
-                        "exports/bible_timeline_selected_event.html",
-                        event=event,
-                        include_nearby=True,
-                    )
-                    self._map_cache[cache_key] = output
-                self._last_highlighted_map = output
-                self._last_selected_event_map_id = event.id
-                if hasattr(self, "map_preview_status_var"):
-                    self.map_preview_status_var.set(f"Selected event map ready: {output}")
-            except Exception:
-                pass
 
         semantic_query = event.title
         if getattr(event, "tags", None):
@@ -2093,6 +2105,9 @@ class UltimateBibleApp:
         self._run_semantic_search_threaded(query)
 
     def run_semantic_search(self) -> None:
+        if self.semantic_engine is None:
+            self.status_var.set("Semantic engine is still loading...")
+            return
         query = self.search_entry.get().strip()
         if not query:
             self.search_results.delete("1.0", "end")
@@ -2118,6 +2133,9 @@ class UltimateBibleApp:
         text.configure(state="disabled")
 
     def run_ai_assistant(self) -> None:
+        if self.study_assistant is None:
+            self.status_var.set("Study assistant is still loading...")
+            return
         question = self.question_entry.get().strip() if hasattr(self, "question_entry") else ""
         if not question:
             question = "What does this verse teach?"
@@ -2132,7 +2150,6 @@ class UltimateBibleApp:
             code = f"G{code}"
 
         self.commentary_output.tag_configure(tag, foreground="blue", underline=1)
-
         self.commentary_output.tag_bind(
             tag,
             "<Button-1>",
@@ -2143,7 +2160,6 @@ class UltimateBibleApp:
             "<Button-3>",
             lambda e, c=code: self._show_strongs_context_menu(e, str(c))
         )
-
         self.commentary_output.tag_bind(
             tag,
             "<Enter>",
@@ -2163,7 +2179,7 @@ class UltimateBibleApp:
             )
         )
 
-    def generate_commentary(self) -> None:
+        def generate_commentary(self) -> None:
         verse = self.current_verse()
         self.commentary_output.delete("1.0", "end")
         if verse is None:
@@ -2222,6 +2238,9 @@ class UltimateBibleApp:
         self.run_strongs_lookup()
 
     def run_strongs_lookup(self) -> None:
+        if self.strongs_engine is None:
+            self.status_var.set("Strong's engine is still loading...")
+            return
         query = self.strongs_query_var.get().strip()
         self.commentary_output.delete("1.0", "end")
         if not query:
