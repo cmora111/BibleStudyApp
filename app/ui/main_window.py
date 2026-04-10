@@ -2179,7 +2179,7 @@ class UltimateBibleApp:
             )
         )
 
-        def generate_commentary(self) -> None:
+    def generate_commentary(self) -> None:
         verse = self.current_verse()
         self.commentary_output.delete("1.0", "end")
         if verse is None:
