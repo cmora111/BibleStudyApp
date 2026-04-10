@@ -1,0 +1,18 @@
+{
+  "datasets": {
+    "crossrefs_csv": {
+      "path": "/home/mora/Bible/BibleStudyApp/ultimate_bible_app_latest/output/crossrefs/openbible_crossrefs.csv",
+      "source": "/home/mora/Bible/BibleStudyApp/BibleDatasetBundle/Cross_Reference/cross-references/cross_references.txt",
+      "sha256": "ec50a039c6af0131f99760032a34ea8a685d275fe177fe08764eda2334384f42",
+      "size_bytes": 8300145,
+      "registered": true
+    },
+    "web_csv": {
+      "path": "/home/mora/Bible/BibleStudyApp/ultimate_bible_app_latest/output/bibles/WEB.csv",
+      "source": "/home/mora/Bible/BibleStudyApp/ultimate_bible_app_latest/output/bibles/OEBcth.csv",
+      "sha256": "8cb4a4802ca41be97e5c9754b910a8f6ec955474da7e8928b4829c1aca7e847b",
+      "size_bytes": 1700288,
+      "registered": true
+    }
+  }
+}

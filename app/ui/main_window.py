@@ -600,25 +600,25 @@ class UltimateBibleApp:
             parts.append(definition)
 
         tooltip_text = "\n".join(parts)
-        self._hide_strongs_tooltip()
 
         x = getattr(event, "x_root", self.root.winfo_rootx() + 60) + 14
         y = getattr(event, "y_root", self.root.winfo_rooty() + 60) + 14
 
-        def _create():
+        tip = getattr(self, "_strongs_tooltip", None)
+        label = getattr(self, "_strongs_tooltip_label", None)
+
+        if tip is None or label is None or not bool(tip.winfo_exists()):
             try:
                 tip = tk.Toplevel(self.root)
                 tip.title(f"Strong's Preview - {code}")
                 tip.transient(self.root)
                 tip.resizable(False, False)
-                tip.geometry(f"420x160+{x}+{y}")
 
                 outer = ttk.Frame(tip, padding=8)
                 outer.pack(fill="both", expand=True)
 
                 label = tk.Label(
                     outer,
-                    text=tooltip_text,
                     justify="left",
                     anchor="nw",
                     bg="#fff8dc",
@@ -635,8 +635,20 @@ class UltimateBibleApp:
             except Exception:
                 self._strongs_tooltip = None
                 self._strongs_tooltip_label = None
+                return
 
-        self._strongs_hover_after = self.root.after(120, _create)
+        try:
+            self._strongs_tooltip.title(f"Strong's Preview - {code}")
+        except Exception:
+            pass
+
+        try:
+            self._strongs_tooltip_label.config(text=tooltip_text)
+            self._strongs_tooltip.geometry(f"420x160+{x}+{y}")
+            self._strongs_tooltip.deiconify()
+            self._strongs_tooltip.lift()
+        except Exception:
+            pass
 
     def copy_text_to_clipboard(self, text: str):
         try:
@@ -961,10 +973,50 @@ class UltimateBibleApp:
         self.reader.insert("end", "\n\n", ())
 
     def _bind_reader_strongs_tag(self, tag: str, code: str):
-        self.reader.tag_configure(tag, foreground="blue", underline=True)
-        self.reader.tag_bind(tag, "<Button-1>", lambda e, c=code: self._safe_open_strongs_code(str(c)))
-        self.reader.tag_bind(tag, "<Enter>", lambda e: self.reader.config(cursor="hand2"))
-        self.reader.tag_bind(tag, "<Leave>", lambda e: self.reader.config(cursor="xterm"))
+        code = str(code or "").strip().upper()
+        if code.isdigit():
+            code = f"G{code}"
+
+        self.reader.tag_configure(tag, foreground="blue", underline=1)
+
+        self.reader.tag_bind(
+            tag,
+            "<Button-1>",
+            lambda e, c=code: self._safe_open_strongs_code(str(c), event=e)
+        )
+        self.reader.tag_bind(
+            tag,
+            "<Button-3>",
+            lambda e, c=code: self._show_strongs_context_menu(e, str(c))
+        )
+
+        self.reader.tag_bind(
+            tag,
+            "<Enter>",
+            lambda e, t=tag, c=code: (
+                self.reader.config(cursor="hand2"),
+                self.reader.tag_configure(t, foreground="blue", underline=1, background="#eef6ff"),
+                self._show_strongs_tooltip(e, str(c))
+            )
+        )
+        self.reader.tag_bind(
+            tag,
+            "<Motion>",
+            lambda e, t=tag, c=code: (
+                self.reader.config(cursor="hand2"),
+                self.reader.tag_configure(t, foreground="blue", underline=1, background="#eef6ff"),
+                self._show_strongs_tooltip(e, str(c))
+            )
+        )
+        self.reader.tag_bind(
+            tag,
+            "<Leave>",
+            lambda e, t=tag: (
+                self.reader.config(cursor="xterm"),
+                self.reader.tag_configure(t, foreground="blue", underline=1, background=""),
+                self._hide_strongs_tooltip()
+            )
+        )
 
 
     def _insert_clickable_words(self, text: str, strongs_blob: str, verse=None):
@@ -2049,43 +2101,48 @@ class UltimateBibleApp:
         self.status_var.set("Study guide generated")
 
     def _bind_commentary_strongs_tag(self, tag: str, code: str):
-        self.commentary_output.tag_configure(
-            tag,
-            foreground="blue",
-            underline=1
-        )
+        code = str(code or "").strip().upper()
+        if code.isdigit():
+            code = f"G{code}"
+
+        self.commentary_output.tag_configure(tag, foreground="blue", underline=1)
 
         self.commentary_output.tag_bind(
             tag,
             "<Button-1>",
-            lambda e, c=code: self._safe_open_strongs_code(str(c))
+            lambda e, c=code: self._safe_open_strongs_code(str(c), event=e)
+        )
+        self.commentary_output.tag_bind(
+            tag,
+            "<Button-3>",
+            lambda e, c=code: self._show_strongs_context_menu(e, str(c))
         )
 
         self.commentary_output.tag_bind(
             tag,
             "<Enter>",
-            lambda e, t=tag: (
+            lambda e, t=tag, c=code: (
                 self.commentary_output.config(cursor="hand2"),
-                self.commentary_output.tag_configure(
-                    t,
-                    foreground="blue",
-                    underline=1,
-                    background="#eef6ff"
-                )
+                self.commentary_output.tag_configure(t, foreground="blue", underline=1, background="#eef6ff"),
+                self._show_strongs_tooltip(e, str(c))
             )
         )
-
+        self.commentary_output.tag_bind(
+            tag,
+            "<Motion>",
+            lambda e, t=tag, c=code: (
+                self.commentary_output.config(cursor="hand2"),
+                self.commentary_output.tag_configure(t, foreground="blue", underline=1, background="#eef6ff"),
+                self._show_strongs_tooltip(e, str(c))
+            )
+        )
         self.commentary_output.tag_bind(
             tag,
             "<Leave>",
             lambda e, t=tag: (
                 self.commentary_output.config(cursor="xterm"),
-                self.commentary_output.tag_configure(
-                    t,
-                    foreground="blue",
-                    underline=1,
-                    background=""
-                )
+                self.commentary_output.tag_configure(t, foreground="blue", underline=1, background=""),
+                self._hide_strongs_tooltip()
             )
         )
 
