@@ -74,10 +74,9 @@ class UltimateBibleApp:
         self._active_semantic_search_token = 0
         self._strongs_result_cache = {}
         self._strongs_tooltip = None
+        self._strongs_tooltip_label = None
+        self._strongs_hover_after = None
         self._strongs_popup = None
-        self._last_highlighted_map = None
-        self._last_selected_event_map_id = None
-        self._full_timeline_map_output = None
         self.build_ui()
         self.start_map_callback_server()
         self.root.after(100, self.display_current_verse)
@@ -429,15 +428,19 @@ class UltimateBibleApp:
         self.commentary_output.pack(fill="both", expand=True, padx=6, pady=6)
 
 
-    def _safe_open_strongs_code(self, code: str):
-        code = str(code or "").strip().upper()
-        if not code:
-            return
-        if code.isdigit():
-            code = f"G{code}"
 
+def _safe_open_strongs_code(self, code: str, event=None):
+    code = str(code or "").strip().upper()
+    if not code:
+        return
+    if code.isdigit():
+        code = f"G{code}"
+
+    result = self._strongs_result_cache.get(code)
+    if result is None:
         try:
             result = self.strongs_engine.study_code(code)
+            self._strongs_result_cache[code] = result
         except Exception as exc:
             try:
                 messagebox.showerror("Strong's Lookup", f"Could not open Strong's code {code}: {exc}")
@@ -445,8 +448,7 @@ class UltimateBibleApp:
                 pass
             return
 
-        self.show_strongs_result_popup(code, result)
-
+    self.show_strongs_result_popup(code, result)
 
     def refresh_after_dataset_change(self):
         try:
@@ -467,23 +469,27 @@ class UltimateBibleApp:
         except Exception:
             pass
 
-    def _safe_open_strongs_code(self, code: str):
-        code = str(code or "").strip().upper()
-        if not code:
-            return
-        if code.isdigit():
-            code = f"G{code}"
 
+def _safe_open_strongs_code(self, code: str, event=None):
+    code = str(code or "").strip().upper()
+    if not code:
+        return
+    if code.isdigit():
+        code = f"G{code}"
+
+    result = self._strongs_result_cache.get(code)
+    if result is None:
         try:
             result = self.strongs_engine.study_code(code)
+            self._strongs_result_cache[code] = result
         except Exception as exc:
-            messagebox.showerror(
-                "Strong's Lookup",
-                f"Could not open Strong's code {code}: {exc}"
-            )
+            try:
+                messagebox.showerror("Strong's Lookup", f"Could not open Strong's code {code}: {exc}")
+            except Exception:
+                pass
             return
 
-        self.show_strongs_result_popup(code, result)
+    self.show_strongs_result_popup(code, result)
 
     def show_strongs_result_popup(self, code: str, result):
         win = tk.Toplevel(self.root)
@@ -530,112 +536,51 @@ class UltimateBibleApp:
         txt.insert("1.0", "\n".join(lines))
         txt.configure(state="disabled")
 
-    def _bind_reader_strongs_tag(self, tag: str, code: str):
-        self.reader.tag_configure(tag, foreground="blue", underline=1)
-        self.reader.tag_bind(
-            tag,
-            "<Button-1>",
-            lambda e, c=code: self._safe_open_strongs_code(str(c), event=e)
+
+def _bind_reader_strongs_tag(self, tag: str, code: str):
+    code = str(code or "").strip().upper()
+    if code.isdigit():
+        code = f"G{code}"
+
+    self.reader.tag_configure(tag, foreground="blue", underline=1)
+    self.reader.tag_bind(
+        tag,
+        "<Button-1>",
+        lambda e, c=code: self._safe_open_strongs_code(str(c), event=e)
+    )
+    self.reader.tag_bind(
+        tag,
+        "<Button-3>",
+        lambda e, c=code: self._show_strongs_context_menu(e, str(c))
+    )
+    self.reader.tag_bind(
+        tag,
+        "<Enter>",
+        lambda e, t=tag, c=code: (
+            self.reader.config(cursor="hand2"),
+            self.reader.tag_configure(
+                t,
+                foreground="blue",
+                underline=1,
+                background="#eef6ff"
+            ),
+            self._show_strongs_tooltip(e, str(c))
         )
-        self.reader.tag_bind(
-            tag,
-            "<Enter>",
-            lambda e: self.reader.config(cursor="hand2")
+    )
+    self.reader.tag_bind(
+        tag,
+        "<Leave>",
+        lambda e, t=tag: (
+            self.reader.config(cursor="xterm"),
+            self.reader.tag_configure(
+                t,
+                foreground="blue",
+                underline=1,
+                background=""
+            ),
+            self._hide_strongs_tooltip()
         )
-        self.reader.tag_bind(
-            tag,
-            "<Leave>",
-            lambda e: self.reader.config(cursor="xterm")
-        )
-
-
-
-    def _hide_strongs_tooltip(self, event=None):
-        tip = getattr(self, "_strongs_tooltip", None)
-        if tip is not None:
-            try:
-                tip.destroy()
-            except Exception:
-                pass
-            self._strongs_tooltip = None
-
-    def _show_strongs_tooltip(self, event, code: str):
-        code = str(code or "").strip().upper()
-        if code.isdigit():
-            code = f"G{code}"
-
-        cached = self._strongs_result_cache.get(code)
-        if cached is None:
-            try:
-                cached = self.strongs_engine.study_code(code)
-                self._strongs_result_cache[code] = cached
-            except Exception:
-                cached = None
-
-        entry = getattr(cached, "entry", None) if cached is not None else None
-        lemma = getattr(entry, "lemma", "") if entry is not None else ""
-        gloss = getattr(entry, "gloss", "") if entry is not None else ""
-        definition = getattr(entry, "definition", "") if entry is not None else ""
-        preview_parts = [code]
-        if lemma:
-            preview_parts.append(f"Lemma: {lemma}")
-        if gloss:
-            preview_parts.append(f"Gloss: {gloss}")
-        if definition:
-            definition = str(definition).strip().replace("\r", " ").replace("\n", " ")
-            if len(definition) > 180:
-                definition = definition[:177].rstrip() + "..."
-            preview_parts.append(definition)
-        text = "\n".join(preview_parts)
-
-        self._hide_strongs_tooltip()
-
-        try:
-            tip = tk.Toplevel(self.root)
-            tip.wm_overrideredirect(True)
-            x = getattr(event, "x_root", 0) + 12
-            y = getattr(event, "y_root", 0) + 12
-            tip.wm_geometry(f"+{x}+{y}")
-            label = tk.Label(
-                tip,
-                text=text,
-                justify="left",
-                background="#fff8dc",
-                relief="solid",
-                borderwidth=1,
-                padx=6,
-                pady=4,
-                wraplength=420,
-            )
-            label.pack()
-            self._strongs_tooltip = tip
-        except Exception:
-            self._strongs_tooltip = None
-
-    def copy_text_to_clipboard(self, text: str):
-        try:
-            self.root.clipboard_clear()
-            self.root.clipboard_append(text)
-            self.root.update_idletasks()
-            self.status_var.set("Copied to clipboard")
-        except Exception:
-            pass
-
-    def _show_strongs_context_menu(self, event, code: str):
-        code = str(code or "").strip().upper()
-        if code.isdigit():
-            code = f"G{code}"
-
-        menu = tk.Menu(self.root, tearoff=0)
-        menu.add_command(label=f"Open {code}", command=lambda c=code: self._safe_open_strongs_code(c))
-        menu.add_command(label=f"Copy {code}", command=lambda c=code: self.copy_text_to_clipboard(c))
-        try:
-            menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            try:
-                menu.grab_release()
-            except Exception:
-                pass
+    )
 
     def open_dataset_import_wizard(self):
         try:
@@ -934,12 +879,51 @@ class UltimateBibleApp:
                 self.reader.insert("end", "  •  ", ())
         self.reader.insert("end", "\n\n", ())
 
-    def _bind_reader_strongs_tag(self, tag: str, code: str):
-        self.reader.tag_configure(tag, foreground="blue", underline=True)
-        self.reader.tag_bind(tag, "<Button-1>", lambda e, c=code: self._safe_open_strongs_code(str(c)))
-        self.reader.tag_bind(tag, "<Enter>", lambda e: self.reader.config(cursor="hand2"))
-        self.reader.tag_bind(tag, "<Leave>", lambda e: self.reader.config(cursor="xterm"))
 
+def _bind_reader_strongs_tag(self, tag: str, code: str):
+    code = str(code or "").strip().upper()
+    if code.isdigit():
+        code = f"G{code}"
+
+    self.reader.tag_configure(tag, foreground="blue", underline=1)
+    self.reader.tag_bind(
+        tag,
+        "<Button-1>",
+        lambda e, c=code: self._safe_open_strongs_code(str(c), event=e)
+    )
+    self.reader.tag_bind(
+        tag,
+        "<Button-3>",
+        lambda e, c=code: self._show_strongs_context_menu(e, str(c))
+    )
+    self.reader.tag_bind(
+        tag,
+        "<Enter>",
+        lambda e, t=tag, c=code: (
+            self.reader.config(cursor="hand2"),
+            self.reader.tag_configure(
+                t,
+                foreground="blue",
+                underline=1,
+                background="#eef6ff"
+            ),
+            self._show_strongs_tooltip(e, str(c))
+        )
+    )
+    self.reader.tag_bind(
+        tag,
+        "<Leave>",
+        lambda e, t=tag: (
+            self.reader.config(cursor="xterm"),
+            self.reader.tag_configure(
+                t,
+                foreground="blue",
+                underline=1,
+                background=""
+            ),
+            self._hide_strongs_tooltip()
+        )
+    )
 
     def _insert_clickable_words(self, text: str, strongs_blob: str, verse=None):
         """
@@ -970,7 +954,10 @@ class UltimateBibleApp:
                     strongs = f"G{strongs}"
                 tag = f"inline_strongs_{i}_{strongs}"
                 self.reader.tag_add(tag, start_idx, end_idx)
-                self._bind_reader_strongs_tag(tag, strongs)
+                self.reader.tag_config(tag, foreground="#2563eb", underline=True)
+                self.reader.tag_bind(tag, "<Button-1>", lambda e, c=strongs: self._safe_open_strongs_code(str(c)))
+                self.reader.tag_bind(tag, "<Enter>", lambda e: self.reader.config(cursor="hand2"))
+                self.reader.tag_bind(tag, "<Leave>", lambda e: self.reader.config(cursor="xterm"))
 
             if i < len(words):
                 self.reader.insert("end", " ")
@@ -1058,7 +1045,22 @@ class UltimateBibleApp:
                 tag = f"top_strongs_{idx}_{code}"
 
                 self.reader.tag_add(tag, start_idx, f"{end_idx}+1c")
-                self._bind_reader_strongs_tag(tag, code)
+                self.reader.tag_configure(tag, foreground="blue", underline=1)
+                self.reader.tag_bind(
+                    tag,
+                    "<Button-1>",
+                    lambda e, c=code: self._safe_open_strongs_code(str(c))
+                )
+                self.reader.tag_bind(
+                    tag,
+                    "<Enter>",
+                    lambda e: self.reader.config(cursor="hand2")
+                )
+                self.reader.tag_bind(
+                    tag,
+                    "<Leave>",
+                    lambda e: self.reader.config(cursor="xterm")
+                )
 
                 if idx < max_items - 1:
                     self.reader.insert("end", "  •  ", ())
@@ -1462,44 +1464,23 @@ class UltimateBibleApp:
         if event.latitude is None or event.longitude is None:
             self.timeline_details.delete("1.0", "end")
             self.timeline_details.insert("end", "This event does not have map coordinates.")
-            if hasattr(self, "map_preview_status_var"):
-                self.map_preview_status_var.set("Selected event has no map coordinates.")
             return
 
         try:
-            self.show_timeline_event_details(event)
-        except Exception:
-            pass
-
-        try:
-            self.update_map_explorer_for_event(event, auto_generate=False)
-        except Exception:
-            pass
-
-        try:
-            cache_key = f"{event.id}:selected"
-            output = self._map_cache.get(cache_key)
-            if not output:
-                output = self.map_engine.export_single_event_map(
-                    "exports/bible_timeline_selected_event.html",
-                    event=event,
-                    include_nearby=True,
-                )
-                self._map_cache[cache_key] = output
-            self._last_highlighted_map = output
-            self._last_selected_event_map_id = event.id
+            self.focus_on_event(event, open_compare_tab=False, update_map=True)
+            output = getattr(self, "_last_highlighted_map", None) or self.map_engine.export_single_event_map(
+                "exports/bible_timeline_selected_event.html",
+                event=event,
+                include_nearby=True,
+            )
         except Exception as exc:
             self.timeline_details.delete("1.0", "end")
             self.timeline_details.insert("end", f"Location map export failed: {exc}")
-            if hasattr(self, "map_preview_status_var"):
-                self.map_preview_status_var.set(f"Selected-event map export failed: {exc}")
             return
 
         self.timeline_details.delete("1.0", "end")
         self.timeline_details.insert("end", f"Selected-event map exported to:\n{output}\n\n")
         self.timeline_details.insert("end", f"Centered on: {event.location_name} ({event.title})")
-        if hasattr(self, "map_preview_status_var"):
-            self.map_preview_status_var.set(f"Selected event map ready: {output}")
         try:
             import webbrowser
             webbrowser.open(f"file://{Path(output).resolve()}")
@@ -1519,10 +1500,7 @@ class UltimateBibleApp:
 
     def open_timeline_map(self):
         try:
-            output = self._full_timeline_map_output
-            if not output:
-                output = self.map_engine.export_map("exports/bible_timeline_map.html")
-                self._full_timeline_map_output = output
+            output = self.map_engine.export_map("exports/bible_timeline_map.html")
         except Exception as exc:
             self.timeline_details.delete("1.0", "end")
             self.timeline_details.insert("end", f"Map export failed: {exc}")
@@ -1817,37 +1795,6 @@ class UltimateBibleApp:
         self.timeline_details.insert("end", "\n")
         self.timeline_details.insert("end", event.summary or "(no summary)")
 
-
-    def update_map_explorer_for_event(self, event, auto_generate: bool = False):
-        if hasattr(self, "map_focus_label_var"):
-            try:
-                self.map_focus_label_var.set(
-                    f"Map Focus: {event.title} — {event.location_name or 'Unknown location'}"
-                )
-            except Exception:
-                pass
-
-        if hasattr(self, "map_meta_output"):
-            try:
-                self.map_meta_output.delete("1.0", "end")
-                self.map_meta_output.insert("end", f"{event.title}\n\n")
-                self.map_meta_output.insert("end", f"Reference: {event.reference}\n")
-                self.map_meta_output.insert("end", f"Time: {event.time_label or 'Unknown'}\n")
-                self.map_meta_output.insert("end", f"Location: {event.location_name or 'Unknown'}\n")
-                self.map_meta_output.insert("end", f"Coordinates: {event.latitude}, {event.longitude}\n\n")
-                if event.summary:
-                    self.map_meta_output.insert("end", f"{event.summary}\n")
-            except Exception:
-                pass
-
-        if hasattr(self, "map_preview_status_var"):
-            if auto_generate and event.latitude is not None and event.longitude is not None:
-                self.map_preview_status_var.set("Generating selected event map...")
-            elif event.latitude is None or event.longitude is None:
-                self.map_preview_status_var.set("Selected event has no map coordinates.")
-            else:
-                self.map_preview_status_var.set("Event selected. Use Selected Event Map to open the focused map.")
-
     def highlight_map_event(self, event):
         try:
             cache_key = f"{event.id}:selected"
@@ -1889,27 +1836,9 @@ class UltimateBibleApp:
             pass
 
         try:
-            self.update_map_explorer_for_event(event, auto_generate=False)
+            self.update_map_explorer_for_event(event, auto_generate=update_map)
         except Exception:
             pass
-
-        if update_map and event.latitude is not None and event.longitude is not None:
-            try:
-                cache_key = f"{event.id}:selected"
-                output = self._map_cache.get(cache_key)
-                if not output:
-                    output = self.map_engine.export_single_event_map(
-                        "exports/bible_timeline_selected_event.html",
-                        event=event,
-                        include_nearby=True,
-                    )
-                    self._map_cache[cache_key] = output
-                self._last_highlighted_map = output
-                self._last_selected_event_map_id = event.id
-                if hasattr(self, "map_preview_status_var"):
-                    self.map_preview_status_var.set(f"Selected event map ready: {output}")
-            except Exception:
-                pass
 
         semantic_query = event.title
         if getattr(event, "tags", None):
@@ -2024,46 +1953,55 @@ class UltimateBibleApp:
         self.build_study_question_buttons(answer)
         self.status_var.set("Study guide generated")
 
-    def _bind_commentary_strongs_tag(self, tag: str, code: str):
-        self.commentary_output.tag_configure(
-            tag,
-            foreground="blue",
-            underline=1
-        )
 
-        self.commentary_output.tag_bind(
-            tag,
-            "<Button-1>",
-            lambda e, c=code: self._safe_open_strongs_code(str(c))
-        )
+def _bind_commentary_strongs_tag(self, tag: str, code: str):
+    code = str(code or "").strip().upper()
+    if code.isdigit():
+        code = f"G{code}"
 
-        self.commentary_output.tag_bind(
-            tag,
-            "<Enter>",
-            lambda e, t=tag: (
-                self.commentary_output.config(cursor="hand2"),
-                self.commentary_output.tag_configure(
-                    t,
-                    foreground="blue",
-                    underline=1,
-                    background="#eef6ff"
-                )
-            )
+    self.commentary_output.tag_configure(
+        tag,
+        foreground="blue",
+        underline=1
+    )
+    self.commentary_output.tag_bind(
+        tag,
+        "<Button-1>",
+        lambda e, c=code: self._safe_open_strongs_code(str(c), event=e)
+    )
+    self.commentary_output.tag_bind(
+        tag,
+        "<Button-3>",
+        lambda e, c=code: self._show_strongs_context_menu(e, str(c))
+    )
+    self.commentary_output.tag_bind(
+        tag,
+        "<Enter>",
+        lambda e, t=tag, c=code: (
+            self.commentary_output.config(cursor="hand2"),
+            self.commentary_output.tag_configure(
+                t,
+                foreground="blue",
+                underline=1,
+                background="#eef6ff"
+            ),
+            self._show_strongs_tooltip(e, str(c))
         )
-
-        self.commentary_output.tag_bind(
-            tag,
-            "<Leave>",
-            lambda e, t=tag: (
-                self.commentary_output.config(cursor="xterm"),
-                self.commentary_output.tag_configure(
-                    t,
-                    foreground="blue",
-                    underline=1,
-                    background=""
-                )
-            )
+    )
+    self.commentary_output.tag_bind(
+        tag,
+        "<Leave>",
+        lambda e, t=tag: (
+            self.commentary_output.config(cursor="xterm"),
+            self.commentary_output.tag_configure(
+                t,
+                foreground="blue",
+                underline=1,
+                background=""
+            ),
+            self._hide_strongs_tooltip()
         )
+    )
 
     def generate_commentary(self) -> None:
         verse = self.current_verse()
