@@ -237,7 +237,7 @@ class UltimateBibleApp:
 
         self._activate_translation(translation, refresh_ui=True)
 
-        def prettify_reference_label(self, text: str) -> str:
+    def prettify_reference_label(self, text: str) -> str:
         value = (text or "").strip()
 
         mapping = {
