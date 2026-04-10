@@ -14,6 +14,7 @@ exports/
 *.html
 
 # Python
+patches/
 __pycache__/
 *.pyc
 .venv/
