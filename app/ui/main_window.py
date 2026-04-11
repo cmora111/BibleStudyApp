@@ -329,6 +329,63 @@ class UltimateBibleApp:
                     self.timeline_details.insert("end", f"Could not load timeline panel:\n{exc}")
                 except Exception:
                     pass
+            return
+
+        if tab_text == "Commentary/Strong's":
+            try:
+                self._populate_commentary_tab_for_current_verse()
+            except Exception as exc:
+                try:
+                    self.commentary_output.delete("1.0", "end")
+                    self.commentary_output.insert("end", f"Could not prepare Commentary/Strong's tab:\n{exc}")
+                except Exception:
+                    pass
+
+    def _populate_commentary_tab_for_current_verse(self):
+        if not hasattr(self, "commentary_output"):
+            return
+
+        verse = self.current_verse()
+        self.commentary_output.delete("1.0", "end")
+
+        if verse is None:
+            self.commentary_output.insert("end", "No current verse selected.\n")
+            return
+
+        self.commentary_output.insert(
+            "end",
+            f"Current verse: {pretty_ref(verse.book, verse.chapter, verse.verse)} [{verse.translation.upper()}]\n\n",
+        )
+
+        links = self.build_top_clickable_strongs_list(
+            verse.book, verse.chapter, verse.verse, verse.translation
+        )
+
+        if links:
+            self.commentary_output.insert("end", "Strong's links in this verse:\n")
+            for idx, (word, code) in enumerate(links[:20], start=1):
+                code = str(code).strip().upper()
+                if code.isdigit():
+                    code = f"G{code}"
+
+                label = f"{idx}. {word} ({code})\n"
+                start = self.commentary_output.index("end")
+                self.commentary_output.insert("end", label)
+                end = self.commentary_output.index("end")
+
+                tag = f"commentary_current_{idx}_{code}"
+                self.commentary_output.tag_add(tag, start, end)
+                self._bind_commentary_strongs_tag(tag, code)
+
+            self.commentary_output.insert(
+                "end",
+                "\nUse Strong's Lookup or Commentary to load detailed content.\n",
+            )
+        else:
+            self.commentary_output.insert(
+                "end",
+                "No Strong's links are available for the current verse/translation.\n",
+            )
 
     def build_study_tab(self, parent: ttk.Frame) -> None:
         frame = ttk.LabelFrame(parent, text="Generate Study Guide")
@@ -1009,10 +1066,7 @@ class UltimateBibleApp:
                     strongs = f"G{strongs}"
                 tag = f"inline_strongs_{i}_{strongs}"
                 self.reader.tag_add(tag, start_idx, end_idx)
-                self.reader.tag_config(tag, foreground="#2563eb", underline=True)
-                self.reader.tag_bind(tag, "<Button-1>", lambda e, c=strongs: self._safe_open_strongs_code(str(c)))
-                self.reader.tag_bind(tag, "<Enter>", lambda e: self.reader.config(cursor="hand2"))
-                self.reader.tag_bind(tag, "<Leave>", lambda e: self.reader.config(cursor="xterm"))
+                self._bind_reader_strongs_tag(tag, strongs)
 
             if i < len(words):
                 self.reader.insert("end", " ")
@@ -1130,6 +1184,14 @@ class UltimateBibleApp:
         if not skip_heavy_panels:
             self.refresh_crossrefs_panel()
             self.refresh_compare_panel()
+
+        try:
+            current = self.right_notebook.select()
+            tab_text = self.right_notebook.tab(current, "text")
+            if tab_text == "Commentary/Strong's":
+                self._populate_commentary_tab_for_current_verse()
+        except Exception:
+            pass
 
     def update_semantic_topics_panel(self, topics):
         try:
@@ -2033,37 +2095,59 @@ class UltimateBibleApp:
         if code.isdigit():
             code = f"G{code}"
 
-        self.commentary_output.tag_configure(tag, foreground="blue", underline=1)
+        self.commentary_output.tag_configure(
+            tag,
+            foreground="blue",
+            underline=1
+        )
+
         self.commentary_output.tag_bind(
             tag,
             "<Button-1>",
             lambda e, c=code: self._safe_open_strongs_code(str(c), event=e)
         )
+
         self.commentary_output.tag_bind(
             tag,
             "<Button-3>",
             lambda e, c=code: self._show_strongs_context_menu(e, str(c))
         )
+
         self.commentary_output.tag_bind(
             tag,
             "<Enter>",
             lambda e, t=tag, c=code: (
                 self.commentary_output.config(cursor="hand2"),
-                self.commentary_output.tag_configure(t, foreground="blue", underline=1, background="#eef6ff"),
+                self.commentary_output.tag_configure(
+                    t,
+                    foreground="blue",
+                    underline=1,
+                    background="#eef6ff"
+                ),
                 self._show_strongs_tooltip(e, str(c))
             )
         )
+
         self.commentary_output.tag_bind(
             tag,
             "<Leave>",
             lambda e, t=tag: (
                 self.commentary_output.config(cursor="xterm"),
-                self.commentary_output.tag_configure(t, foreground="blue", underline=1, background=""),
+                self.commentary_output.tag_configure(
+                    t,
+                    foreground="blue",
+                    underline=1,
+                    background=""
+                ),
                 self._hide_strongs_tooltip()
             )
         )
 
     def generate_commentary(self) -> None:
+        try:
+            self.right_notebook.select(self.commentary_tab)
+        except Exception:
+            pass
         verse = self.current_verse()
         self.commentary_output.delete("1.0", "end")
         if verse is None:
@@ -2122,6 +2206,10 @@ class UltimateBibleApp:
         self.run_strongs_lookup()
 
     def run_strongs_lookup(self) -> None:
+        try:
+            self.right_notebook.select(self.commentary_tab)
+        except Exception:
+            pass
         query = self.strongs_query_var.get().strip()
         self.commentary_output.delete("1.0", "end")
         if not query:
