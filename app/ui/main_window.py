@@ -75,8 +75,8 @@ class UltimateBibleApp:
         self._strongs_result_cache = {}
         self._strongs_tooltip = None
         self._strongs_popup = None
+        self._map_server_started = False
         self.build_ui()
-        self.start_map_callback_server()
         self.root.after(100, lambda: self.display_current_verse(skip_heavy_panels=True))
 
     def build_ui(self) -> None:
@@ -306,6 +306,30 @@ class UltimateBibleApp:
         self.build_datasets_tab(self.datasets_tab)
         self.build_import_tab(self.import_tab)
 
+        self.right_notebook.bind("<<NotebookTabChanged>>", self._on_right_tab_changed)
+
+    def _on_right_tab_changed(self, event=None):
+        try:
+            current = self.right_notebook.select()
+            tab_text = self.right_notebook.tab(current, "text")
+        except Exception:
+            return
+
+        if tab_text == "Timeline / Map" and not getattr(self, "_timeline_loaded", False):
+            self._timeline_loaded = True
+            try:
+                self._ensure_map_callback_server()
+            except Exception:
+                pass
+            try:
+                self.refresh_timeline_panel()
+            except Exception as exc:
+                try:
+                    self.timeline_details.delete("1.0", "end")
+                    self.timeline_details.insert("end", f"Could not load timeline panel:\n{exc}")
+                except Exception:
+                    pass
+
     def build_study_tab(self, parent: ttk.Frame) -> None:
         frame = ttk.LabelFrame(parent, text="Generate Study Guide")
         frame.pack(fill="both", expand=True, padx=6, pady=6)
@@ -436,7 +460,8 @@ class UltimateBibleApp:
         ttk.Button(map_btns, text="Full Timeline Map", command=self.open_timeline_map).pack(side="left", padx=(6, 0))
 
         self._timeline_events_cache = []
-        self.refresh_timeline_panel()
+        self._timeline_loaded = False
+        self.timeline_list.insert("end", "Timeline loads when opened.")
 
     def build_commentary_tab(self, parent: ttk.Frame) -> None:
         frame = ttk.LabelFrame(parent, text="Commentary / Strong's")
@@ -540,6 +565,10 @@ class UltimateBibleApp:
         txt.configure(state="disabled")
 
     def _bind_reader_strongs_tag(self, tag: str, code: str):
+        code = str(code or "").strip().upper()
+        if code.isdigit():
+            code = f"G{code}"
+
         self.reader.tag_configure(tag, foreground="blue", underline=1)
         self.reader.tag_bind(
             tag,
@@ -548,15 +577,104 @@ class UltimateBibleApp:
         )
         self.reader.tag_bind(
             tag,
+            "<Button-3>",
+            lambda e, c=code: self._show_strongs_context_menu(e, str(c))
+        )
+        self.reader.tag_bind(
+            tag,
             "<Enter>",
-            lambda e: self.reader.config(cursor="hand2")
+            lambda e, t=tag, c=code: (
+                self.reader.config(cursor="hand2"),
+                self.reader.tag_configure(t, foreground="blue", underline=1, background="#eef6ff"),
+                self._show_strongs_tooltip(e, str(c))
+            )
         )
         self.reader.tag_bind(
             tag,
             "<Leave>",
-            lambda e: self.reader.config(cursor="xterm")
+            lambda e, t=tag: (
+                self.reader.config(cursor="xterm"),
+                self.reader.tag_configure(t, foreground="blue", underline=1, background=""),
+                self._hide_strongs_tooltip()
+            )
         )
 
+    def _ensure_map_callback_server(self):
+        if getattr(self, "_map_server_started", False):
+            return
+        try:
+            self.start_map_callback_server()
+            self._map_server_started = True
+        except Exception as exc:
+            print(f"Could not start map callback server: {exc}")
+
+    def _hide_strongs_tooltip(self, event=None):
+        tip = getattr(self, "_strongs_tooltip", None)
+        if tip is not None:
+            try:
+                tip.destroy()
+            except Exception:
+                pass
+            self._strongs_tooltip = None
+
+    def _show_strongs_tooltip(self, event, code: str):
+        code = str(code or "").strip().upper()
+        if not code:
+            return
+        if code.isdigit():
+            code = f"G{code}"
+
+        self._hide_strongs_tooltip()
+
+        try:
+            tip = tk.Toplevel(self.root)
+            tip.wm_overrideredirect(True)
+            x = getattr(event, "x_root", self.root.winfo_rootx() + 20) + 12
+            y = getattr(event, "y_root", self.root.winfo_rooty() + 20) + 12
+            tip.wm_geometry(f"+{x}+{y}")
+
+            label = tk.Label(
+                tip,
+                text=f"Strong's {code}\nClick for full study",
+                justify="left",
+                bg="#fff8dc",
+                relief="solid",
+                borderwidth=1,
+                padx=6,
+                pady=4,
+                wraplength=240,
+            )
+            label.pack()
+
+            self._strongs_tooltip = tip
+            tip.lift()
+        except Exception:
+            self._strongs_tooltip = None
+
+    def copy_text_to_clipboard(self, text: str):
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            self.root.update_idletasks()
+            self.status_var.set("Copied to clipboard")
+        except Exception:
+            pass
+
+    def _show_strongs_context_menu(self, event, code: str):
+        code = str(code or "").strip().upper()
+        if code.isdigit():
+            code = f"G{code}"
+
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label=f"Open {code}", command=lambda c=code: self._safe_open_strongs_code(c))
+        menu.add_command(label=f"Copy {code}", command=lambda c=code: self.copy_text_to_clipboard(c))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
 
     def open_dataset_import_wizard(self):
         try:
@@ -1395,6 +1513,7 @@ class UltimateBibleApp:
         self.focus_on_event(event, open_compare_tab=True, update_map=False)
 
     def open_selected_timeline_location_on_map(self):
+        self._ensure_map_callback_server()
         selection = self.timeline_list.curselection()
         if not selection or not getattr(self, "_timeline_events_cache", None):
             return
@@ -1438,6 +1557,7 @@ class UltimateBibleApp:
             pass
 
     def open_timeline_map(self):
+        self._ensure_map_callback_server()
         try:
             output = self.map_engine.export_map("exports/bible_timeline_map.html")
         except Exception as exc:
@@ -1909,43 +2029,37 @@ class UltimateBibleApp:
         self.status_var.set("Study guide generated")
 
     def _bind_commentary_strongs_tag(self, tag: str, code: str):
-        self.commentary_output.tag_configure(
-            tag,
-            foreground="blue",
-            underline=1
-        )
+        code = str(code or "").strip().upper()
+        if code.isdigit():
+            code = f"G{code}"
 
+        self.commentary_output.tag_configure(tag, foreground="blue", underline=1)
         self.commentary_output.tag_bind(
             tag,
             "<Button-1>",
-            lambda e, c=code: self._safe_open_strongs_code(str(c))
+            lambda e, c=code: self._safe_open_strongs_code(str(c), event=e)
         )
-
+        self.commentary_output.tag_bind(
+            tag,
+            "<Button-3>",
+            lambda e, c=code: self._show_strongs_context_menu(e, str(c))
+        )
         self.commentary_output.tag_bind(
             tag,
             "<Enter>",
-            lambda e, t=tag: (
+            lambda e, t=tag, c=code: (
                 self.commentary_output.config(cursor="hand2"),
-                self.commentary_output.tag_configure(
-                    t,
-                    foreground="blue",
-                    underline=1,
-                    background="#eef6ff"
-                )
+                self.commentary_output.tag_configure(t, foreground="blue", underline=1, background="#eef6ff"),
+                self._show_strongs_tooltip(e, str(c))
             )
         )
-
         self.commentary_output.tag_bind(
             tag,
             "<Leave>",
             lambda e, t=tag: (
                 self.commentary_output.config(cursor="xterm"),
-                self.commentary_output.tag_configure(
-                    t,
-                    foreground="blue",
-                    underline=1,
-                    background=""
-                )
+                self.commentary_output.tag_configure(t, foreground="blue", underline=1, background=""),
+                self._hide_strongs_tooltip()
             )
         )
 
