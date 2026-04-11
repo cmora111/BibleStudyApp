@@ -362,20 +362,31 @@ class UltimateBibleApp:
         )
 
         if links:
-            self.commentary_output.insert("end", "Strong's links in this verse:\n")
+            self.commentary_output.tag_configure(
+                "section_header",
+                font=("TkDefaultFont", 10, "bold")
+            )
+            self.commentary_output.insert(
+                "end",
+                "Strong's links in this verse:\n",
+                ("section_header",)
+            )
+
             for idx, (word, code) in enumerate(links[:20], start=1):
                 code = str(code).strip().upper()
                 if code.isdigit():
                     code = f"G{code}"
 
-                label = f"{idx}. {word} ({code})\n"
+                self.commentary_output.insert("end", f"{idx}. {word} (", ())
                 start = self.commentary_output.index("end")
-                self.commentary_output.insert("end", label)
+                self.commentary_output.insert("end", code, ())
                 end = self.commentary_output.index("end")
 
                 tag = f"commentary_current_{idx}_{code}"
                 self.commentary_output.tag_add(tag, start, end)
                 self._bind_commentary_strongs_tag(tag, code)
+
+                self.commentary_output.insert("end", ")\n", ())
 
             self.commentary_output.insert(
                 "end",
