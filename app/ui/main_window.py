@@ -1205,22 +1205,7 @@ class UltimateBibleApp:
                 tag = f"top_strongs_{idx}_{code}"
 
                 self.reader.tag_add(tag, start_idx, f"{end_idx}+1c")
-                self.reader.tag_configure(tag, foreground="blue", underline=1)
-                self.reader.tag_bind(
-                    tag,
-                    "<Button-1>",
-                    lambda e, c=code: self._safe_open_strongs_code(str(c))
-                )
-                self.reader.tag_bind(
-                    tag,
-                    "<Enter>",
-                    lambda e: self.reader.config(cursor="hand2")
-                )
-                self.reader.tag_bind(
-                    tag,
-                    "<Leave>",
-                    lambda e: self.reader.config(cursor="xterm")
-                )
+                self._bind_reader_strongs_tag(tag, code)
 
                 if idx < max_items - 1:
                     self.reader.insert("end", "  •  ", ())
