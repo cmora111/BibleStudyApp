@@ -1041,51 +1041,6 @@ class UltimateBibleApp:
                 self.reader.insert("end", "  •  ", ())
         self.reader.insert("end", "\n\n", ())
 
-    def _bind_reader_strongs_tag(self, tag: str, code: str):
-        code = str(code or "").strip().upper()
-        if code.isdigit():
-            code = f"G{code}"
-
-        self.reader.tag_configure(tag, foreground="blue", underline=1)
-        self.reader.tag_bind(
-            tag,
-            "<Button-1>",
-            lambda e, c=code: self._safe_open_strongs_code(str(c), event=e)
-        )
-        self.reader.tag_bind(
-            tag,
-            "<Button-3>",
-            lambda e, c=code: self._show_strongs_context_menu(e, str(c))
-        )
-        self.reader.tag_bind(
-            tag,
-            "<Enter>",
-            lambda e, t=tag, c=code: (
-                self.reader.config(cursor="hand2"),
-                self.reader.tag_configure(
-                    t,
-                    foreground="blue",
-                    underline=1,
-                    background="#eef6ff"
-                ),
-                self._show_strongs_tooltip(e, str(c))
-            )
-        )
-        self.reader.tag_bind(
-            tag,
-            "<Leave>",
-            lambda e, t=tag: (
-                self.reader.config(cursor="xterm"),
-                self.reader.tag_configure(
-                    t,
-                    foreground="blue",
-                    underline=1,
-                    background=""
-                ),
-                self._hide_strongs_tooltip()
-            )
-        )
-
 
     def _insert_clickable_words(self, text: str, strongs_blob: str, verse=None):
         """
