@@ -362,20 +362,31 @@ class UltimateBibleApp:
         )
 
         if links:
-            self.commentary_output.insert("end", "Strong's links in this verse:\n")
+            self.commentary_output.tag_configure(
+                "section_header",
+                font=("TkDefaultFont", 10, "bold")
+            )
+            self.commentary_output.insert(
+                "end",
+                "Strong's links in this verse:\n",
+                ("section_header",)
+            )
+
             for idx, (word, code) in enumerate(links[:20], start=1):
                 code = str(code).strip().upper()
                 if code.isdigit():
                     code = f"G{code}"
 
-                label = f"{idx}. {word} ({code})\n"
+                self.commentary_output.insert("end", f"{idx}. {word} (", ())
                 start = self.commentary_output.index("end")
-                self.commentary_output.insert("end", label)
+                self.commentary_output.insert("end", code, ())
                 end = self.commentary_output.index("end")
 
                 tag = f"commentary_current_{idx}_{code}"
                 self.commentary_output.tag_add(tag, start, end)
                 self._bind_commentary_strongs_tag(tag, code)
+
+                self.commentary_output.insert("end", ")\n", ())
 
             self.commentary_output.insert(
                 "end",
@@ -1030,12 +1041,6 @@ class UltimateBibleApp:
                 self.reader.insert("end", "  •  ", ())
         self.reader.insert("end", "\n\n", ())
 
-    def _bind_reader_strongs_tag(self, tag: str, code: str):
-        self.reader.tag_configure(tag, foreground="blue", underline=True)
-        self.reader.tag_bind(tag, "<Button-1>", lambda e, c=code: self._safe_open_strongs_code(str(c)))
-        self.reader.tag_bind(tag, "<Enter>", lambda e: self.reader.config(cursor="hand2"))
-        self.reader.tag_bind(tag, "<Leave>", lambda e: self.reader.config(cursor="xterm"))
-
 
     def _insert_clickable_words(self, text: str, strongs_blob: str, verse=None):
         """
@@ -1155,22 +1160,7 @@ class UltimateBibleApp:
                 tag = f"top_strongs_{idx}_{code}"
 
                 self.reader.tag_add(tag, start_idx, f"{end_idx}+1c")
-                self.reader.tag_configure(tag, foreground="blue", underline=1)
-                self.reader.tag_bind(
-                    tag,
-                    "<Button-1>",
-                    lambda e, c=code: self._safe_open_strongs_code(str(c))
-                )
-                self.reader.tag_bind(
-                    tag,
-                    "<Enter>",
-                    lambda e: self.reader.config(cursor="hand2")
-                )
-                self.reader.tag_bind(
-                    tag,
-                    "<Leave>",
-                    lambda e: self.reader.config(cursor="xterm")
-                )
+                self._bind_reader_strongs_tag(tag, code)
 
                 if idx < max_items - 1:
                     self.reader.insert("end", "  •  ", ())
@@ -2004,20 +1994,41 @@ class UltimateBibleApp:
             self.status_var.set("Semantic search complete: 0 results")
             return
 
-        self.search_results.insert("end", f"Semantic engine mode: {self.semantic_engine.mode}\n\n")
+        engine_mode = getattr(self.semantic_engine, "mode", "semantic")
+        self.search_results.insert("end", f"Semantic engine mode: {engine_mode}\n\n")
         for idx, hit in enumerate(hits):
-            ref = pretty_ref(hit.verse.book, hit.verse.chapter, hit.verse.verse)
-            header = f"{ref} [{hit.verse.translation.upper()}]  score={hit.score:.3f}"
-            start = self.search_results.index("end-1c")
+            verse_obj = getattr(hit, "verse", None)
+            if verse_obj is not None:
+                ref = pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)
+                body = self.sanitize_display_text(verse_obj.text)
+                translation = verse_obj.translation.upper()
+            else:
+                ref = "Unknown reference"
+                body = ""
+                translation = "N/A"
+
+            score = getattr(hit, "score", None)
+            if score is not None:
+                header = f"{ref} [{translation}]  score={score:.3f}"
+            else:
+                header = f"{ref} [{translation}]"
+
+            start = self.search_results.index("end")
             self.search_results.insert("end", header + "\n")
-            end = self.search_results.index("end-1c")
+            end = self.search_results.index("end")
             tag = f"search_ref_{idx}"
             self.search_results.tag_add(tag, start, end)
             self.search_results.tag_config(tag, foreground="#1a73e8", underline=True)
-            self.search_results.tag_bind(tag, "<Button-1>", lambda e, h=hit: self.open_semantic_result_popup(h))
-            self.search_results.insert("end", f"{self.sanitize_display_text(hit.verse.text)}\n\n")
+            self.search_results.tag_bind(tag, "<Button-1>", lambda e, h=hit: self._open_semantic_hit_in_reader(h))
+            self.search_results.tag_bind(tag, "<Enter>", lambda e: self.search_results.config(cursor="hand2"))
+            self.search_results.tag_bind(tag, "<Leave>", lambda e: self.search_results.config(cursor="xterm"))
 
-        self.status_var.set(f"Semantic search complete: {len(hits)} results ({self.semantic_engine.mode})")
+            if body:
+                self.search_results.insert("end", body + "\n\n")
+            else:
+                self.search_results.insert("end", "\n")
+
+        self.status_var.set(f"Semantic search complete: {len(hits)} results ({engine_mode})")
 
     def _run_semantic_search_threaded(self, query: str):
         token = next(self._semantic_search_counter)
@@ -2028,7 +2039,8 @@ class UltimateBibleApp:
 
         def worker():
             try:
-                hits = self.semantic_engine.search(query, limit=20)
+                engine = self._ensure_semantic_engine()
+                hits = engine.search(query, limit=20)
                 self.root.after(0, lambda: self._deliver_semantic_search_results(token, query, hits, None))
             except Exception as exc:
                 self.root.after(0, lambda exc=exc: self._deliver_semantic_search_results(token, query, [], str(exc)))
@@ -2036,12 +2048,33 @@ class UltimateBibleApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def run_semantic_search_for_query(self, query: str):
-        self.search_entry.delete(0, "end")
-        self.search_entry.insert(0, query)
+        try:
+            self.search_entry.delete(0, "end")
+            self.search_entry.insert(0, query)
+        except Exception:
+            pass
+
+        try:
+            self.right_notebook.select(self.study_tab)
+        except Exception:
+            pass
+
+        try:
+            self._ensure_semantic_engine()
+        except Exception as exc:
+            self.search_results.delete("1.0", "end")
+            self.search_results.insert("end", f"Could not load semantic engine:\n{exc}")
+            self.status_var.set("Semantic engine load failed")
+            return
+
         self._run_semantic_search_threaded(query)
 
     def run_semantic_search(self) -> None:
         query = self.search_entry.get().strip()
+        try:
+            self.right_notebook.select(self.study_tab)
+        except Exception:
+            pass
         try:
             self._ensure_semantic_engine()
         except Exception as exc:
@@ -2053,6 +2086,22 @@ class UltimateBibleApp:
             self.search_results.delete("1.0", "end")
             return
         self._run_semantic_search_threaded(query)
+
+    def _open_semantic_hit_in_reader(self, hit):
+        try:
+            verse_obj = getattr(hit, "verse", None)
+            if verse_obj is None:
+                return
+            self.book_var.set(verse_obj.book)
+            self.chapter_var.set(verse_obj.chapter)
+            self.verse_var.set(verse_obj.verse)
+            self.translation_var.set(verse_obj.translation)
+            self.display_current_verse()
+        except Exception as exc:
+            try:
+                messagebox.showerror("Semantic Result", f"Could not open verse:\n\n{exc}")
+            except Exception:
+                pass
 
     def open_semantic_result_popup(self, hit):
         top = tk.Toplevel(self.root)
