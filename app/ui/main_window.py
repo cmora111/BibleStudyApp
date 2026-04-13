@@ -2100,6 +2100,71 @@ class UltimateBibleApp:
 
         self.status_var.set(f"Semantic search complete: {query}")
 
+    def _open_semantic_hit_in_reader(self, verse_obj):
+        try:
+            self.book_var.set(verse_obj.book)
+            self.chapter_var.set(verse_obj.chapter)
+            self.verse_var.set(verse_obj.verse)
+            self.display_current_verse()
+        except Exception as exc:
+            try:
+                messagebox.showerror("Semantic Result", f"Could not open verse:\n\n{exc}")
+            except Exception:
+                pass
+
+
+    def _render_semantic_hits(self, query: str, hits) -> None:
+        self.search_results.delete("1.0", "end")
+
+        if not hits:
+            self.search_results.insert("end", "No semantic matches found.")
+            self.status_var.set("No semantic matches found")
+            return
+
+        self.search_results.insert("end", f"Semantic results for: {query}\n\n")
+
+        for i, hit in enumerate(hits[:20], start=1):
+            verse_obj = getattr(hit, "verse", None)
+            score = getattr(hit, "score", None)
+
+            if verse_obj is not None:
+                ref = pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)
+                text = verse_obj.text or ""
+            else:
+                ref = "Unknown reference"
+                text = ""
+
+            start = self.search_results.index("end")
+            if score is not None:
+                self.search_results.insert("end", f"{i}. {ref}  (score={score:.3f})\n")
+            else:
+                self.search_results.insert("end", f"{i}. {ref}\n")
+            end = self.search_results.index("end")
+
+            if verse_obj is not None:
+                tag = f"semantic_hit_{i}_{verse_obj.book}_{verse_obj.chapter}_{verse_obj.verse}"
+                self.search_results.tag_add(tag, start, end)
+                self.search_results.tag_config(tag, foreground="#1a73e8", underline=True)
+                self.search_results.tag_bind(
+                    tag,
+                    "<Button-1>",
+                    lambda e, v=verse_obj: self._open_semantic_hit_in_reader(v)
+                )
+                self.search_results.tag_bind(
+                    tag,
+                    "<Enter>",
+                    lambda e: self.search_results.config(cursor="hand2")
+                )
+                self.search_results.tag_bind(
+                    tag,
+                    "<Leave>",
+                    lambda e: self.search_results.config(cursor="xterm")
+                )
+
+            self.search_results.insert("end", f"{text}\n\n")
+
+        self.status_var.set(f"Semantic search complete: {query}")
+
     def _run_semantic_search_threaded(self, query: str):
         token = next(self._semantic_search_counter)
         self._active_semantic_search_token = token
@@ -2137,6 +2202,8 @@ class UltimateBibleApp:
             self.search_results.insert("end", f"Semantic search failed:\n{exc}")
             self.status_var.set("Semantic search failed")
             return
+
+        self._render_semantic_hits(query, hits)
 
     def run_semantic_search_for_query(self, query: str):
         try:
