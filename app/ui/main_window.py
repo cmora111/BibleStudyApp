@@ -142,20 +142,9 @@ class UltimateBibleApp:
 
     def _ensure_semantic_engine(self):
         translation = (self.translation_var.get() or "").strip().lower()
-
         if self.semantic_engine is None:
             self.status_var.set(f"Loading semantic engine for {translation.upper()}...")
-
-            try:
-                engine = SemanticSearchEngine(self.db, translation=translation)
-            except Exception as exc:
-                raise RuntimeError(f"Semantic engine init failed: {exc}")
-
-            if engine is None:
-                raise RuntimeError("Semantic engine returned None (likely missing embeddings/index)")
-
-            self.semantic_engine = engine
-
+            self.semantic_engine = SemanticSearchEngine(self.db, translation=translation)
         return self.semantic_engine
 
     def _ensure_strongs_engine(self):
@@ -643,6 +632,41 @@ class UltimateBibleApp:
         txt.insert("1.0", "\n".join(lines))
         txt.configure(state="disabled")
 
+    def _bind_reader_strongs_tag(self, tag: str, code: str):
+        code = str(code or "").strip().upper()
+        if code.isdigit():
+            code = f"G{code}"
+
+        self.reader.tag_configure(tag, foreground="blue", underline=1)
+        self.reader.tag_bind(
+            tag,
+            "<Button-1>",
+            lambda e, c=code: self._safe_open_strongs_code(str(c), event=e)
+        )
+        self.reader.tag_bind(
+            tag,
+            "<Button-3>",
+            lambda e, c=code: self._show_strongs_context_menu(e, str(c))
+        )
+        self.reader.tag_bind(
+            tag,
+            "<Enter>",
+            lambda e, t=tag, c=code: (
+                self.reader.config(cursor="hand2"),
+                self.reader.tag_configure(t, foreground="blue", underline=1, background="#eef6ff"),
+                self._show_strongs_tooltip(e, str(c))
+            )
+        )
+        self.reader.tag_bind(
+            tag,
+            "<Leave>",
+            lambda e, t=tag: (
+                self.reader.config(cursor="xterm"),
+                self.reader.tag_configure(t, foreground="blue", underline=1, background=""),
+                self._hide_strongs_tooltip()
+            )
+        )
+
     def _ensure_map_callback_server(self):
         if getattr(self, "_map_server_started", False):
             return
@@ -672,12 +696,10 @@ class UltimateBibleApp:
 
         try:
             tip = tk.Toplevel(self.root)
-            tip.transient(self.root)
-            tip.resizable(False, False)
-
+            tip.wm_overrideredirect(True)
             x = getattr(event, "x_root", self.root.winfo_rootx() + 20) + 12
             y = getattr(event, "y_root", self.root.winfo_rooty() + 20) + 12
-            tip.geometry(f"+{x}+{y}")
+            tip.wm_geometry(f"+{x}+{y}")
 
             label = tk.Label(
                 tip,
@@ -1025,19 +1047,16 @@ class UltimateBibleApp:
             code = f"G{code}"
 
         self.reader.tag_configure(tag, foreground="blue", underline=1)
-
         self.reader.tag_bind(
             tag,
             "<Button-1>",
             lambda e, c=code: self._safe_open_strongs_code(str(c), event=e)
         )
-
         self.reader.tag_bind(
             tag,
             "<Button-3>",
             lambda e, c=code: self._show_strongs_context_menu(e, str(c))
         )
-
         self.reader.tag_bind(
             tag,
             "<Enter>",
@@ -1052,7 +1071,6 @@ class UltimateBibleApp:
                 self._show_strongs_tooltip(e, str(c))
             )
         )
-
         self.reader.tag_bind(
             tag,
             "<Leave>",
@@ -1067,6 +1085,7 @@ class UltimateBibleApp:
                 self._hide_strongs_tooltip()
             )
         )
+
 
     def _insert_clickable_words(self, text: str, strongs_blob: str, verse=None):
         """
@@ -1839,7 +1858,7 @@ class UltimateBibleApp:
                 self._graph_nav_menu = tk.Menu(self.root, tearoff=0)
             else:
                 self._graph_nav_menu.delete(0, "end")
-                self._graph_nav_menu.add_command(
+            self._graph_nav_menu.add_command(
                 label=f"Navigate: {label}",
                 command=lambda nt=node_type, lb=label: self.handle_graph_navigation(nt, lb),
             )
@@ -2020,150 +2039,41 @@ class UltimateBibleApp:
             self.status_var.set("Semantic search complete: 0 results")
             return
 
-        self.search_results.insert("end", f"Semantic engine mode: {self.semantic_engine.mode}\n\n")
+        engine_mode = getattr(self.semantic_engine, "mode", "semantic")
+        self.search_results.insert("end", f"Semantic engine mode: {engine_mode}\n\n")
         for idx, hit in enumerate(hits):
-            ref = pretty_ref(hit.verse.book, hit.verse.chapter, hit.verse.verse)
-            header = f"{ref} [{hit.verse.translation.upper()}]  score={hit.score:.3f}"
-            start = self.search_results.index("end-1c")
+            verse_obj = getattr(hit, "verse", None)
+            if verse_obj is not None:
+                ref = pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)
+                body = self.sanitize_display_text(verse_obj.text)
+                translation = verse_obj.translation.upper()
+            else:
+                ref = "Unknown reference"
+                body = ""
+                translation = "N/A"
+
+            score = getattr(hit, "score", None)
+            if score is not None:
+                header = f"{ref} [{translation}]  score={score:.3f}"
+            else:
+                header = f"{ref} [{translation}]"
+
+            start = self.search_results.index("end")
             self.search_results.insert("end", header + "\n")
-            end = self.search_results.index("end-1c")
+            end = self.search_results.index("end")
             tag = f"search_ref_{idx}"
             self.search_results.tag_add(tag, start, end)
             self.search_results.tag_config(tag, foreground="#1a73e8", underline=True)
-            self.search_results.tag_bind(tag, "<Button-1>", lambda e, h=hit: self.open_semantic_result_popup(h))
-            self.search_results.insert("end", f"{self.sanitize_display_text(hit.verse.text)}\n\n")
+            self.search_results.tag_bind(tag, "<Button-1>", lambda e, h=hit: self._open_semantic_hit_in_reader(h))
+            self.search_results.tag_bind(tag, "<Enter>", lambda e: self.search_results.config(cursor="hand2"))
+            self.search_results.tag_bind(tag, "<Leave>", lambda e: self.search_results.config(cursor="xterm"))
 
-        self.status_var.set(f"Semantic search complete: {len(hits)} results ({self.semantic_engine.mode})")
-
-    def _open_semantic_hit_in_reader(self, verse_obj):
-        try:
-            self.book_var.set(verse_obj.book)
-            self.chapter_var.set(verse_obj.chapter)
-            self.verse_var.set(verse_obj.verse)
-            self.display_current_verse()
-        except Exception as exc:
-            try:
-                messagebox.showerror("Semantic Result", f"Could not open verse:\n\n{exc}")
-            except Exception:
-                pass
-
-
-    def _render_semantic_hits(self, query: str, hits) -> None:
-        self.search_results.delete("1.0", "end")
-
-        if not hits:
-            self.search_results.insert("end", "No semantic matches found.")
-            self.status_var.set("No semantic matches found")
-            return
-
-        self.search_results.insert("end", f"Semantic results for: {query}\n\n")
-
-        for i, hit in enumerate(hits[:20], start=1):
-            verse_obj = getattr(hit, "verse", None)
-            score = getattr(hit, "score", None)
-
-            if verse_obj is not None:
-                ref = pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)
-                text = verse_obj.text or ""
+            if body:
+                self.search_results.insert("end", body + "\n\n")
             else:
-                ref = "Unknown reference"
-                text = ""
+                self.search_results.insert("end", "\n")
 
-            start = self.search_results.index("end")
-            if score is not None:
-                self.search_results.insert("end", f"{i}. {ref}  (score={score:.3f})\n")
-            else:
-                self.search_results.insert("end", f"{i}. {ref}\n")
-            end = self.search_results.index("end")
-
-            if verse_obj is not None:
-                tag = f"semantic_hit_{i}_{verse_obj.book}_{verse_obj.chapter}_{verse_obj.verse}"
-                self.search_results.tag_add(tag, start, end)
-                self.search_results.tag_config(tag, foreground="#1a73e8", underline=True)
-                self.search_results.tag_bind(
-                    tag,
-                    "<Button-1>",
-                    lambda e, v=verse_obj: self._open_semantic_hit_in_reader(v)
-                )
-                self.search_results.tag_bind(
-                    tag,
-                    "<Enter>",
-                    lambda e: self.search_results.config(cursor="hand2")
-                )
-                self.search_results.tag_bind(
-                    tag,
-                    "<Leave>",
-                    lambda e: self.search_results.config(cursor="xterm")
-                )
-
-            self.search_results.insert("end", f"{text}\n\n")
-
-        self.status_var.set(f"Semantic search complete: {query}")
-
-    def _open_semantic_hit_in_reader(self, verse_obj):
-        try:
-            self.book_var.set(verse_obj.book)
-            self.chapter_var.set(verse_obj.chapter)
-            self.verse_var.set(verse_obj.verse)
-            self.display_current_verse()
-        except Exception as exc:
-            try:
-                messagebox.showerror("Semantic Result", f"Could not open verse:\n\n{exc}")
-            except Exception:
-                pass
-
-
-    def _render_semantic_hits(self, query: str, hits) -> None:
-        self.search_results.delete("1.0", "end")
-
-        if not hits:
-            self.search_results.insert("end", "No semantic matches found.")
-            self.status_var.set("No semantic matches found")
-            return
-
-        self.search_results.insert("end", f"Semantic results for: {query}\n\n")
-
-        for i, hit in enumerate(hits[:20], start=1):
-            verse_obj = getattr(hit, "verse", None)
-            score = getattr(hit, "score", None)
-
-            if verse_obj is not None:
-                ref = pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)
-                text = verse_obj.text or ""
-            else:
-                ref = "Unknown reference"
-                text = ""
-
-            start = self.search_results.index("end")
-            if score is not None:
-                self.search_results.insert("end", f"{i}. {ref}  (score={score:.3f})\n")
-            else:
-                self.search_results.insert("end", f"{i}. {ref}\n")
-            end = self.search_results.index("end")
-
-            if verse_obj is not None:
-                tag = f"semantic_hit_{i}_{verse_obj.book}_{verse_obj.chapter}_{verse_obj.verse}"
-                self.search_results.tag_add(tag, start, end)
-                self.search_results.tag_config(tag, foreground="#1a73e8", underline=True)
-                self.search_results.tag_bind(
-                    tag,
-                    "<Button-1>",
-                    lambda e, v=verse_obj: self._open_semantic_hit_in_reader(v)
-                )
-                self.search_results.tag_bind(
-                    tag,
-                    "<Enter>",
-                    lambda e: self.search_results.config(cursor="hand2")
-                )
-                self.search_results.tag_bind(
-                    tag,
-                    "<Leave>",
-                    lambda e: self.search_results.config(cursor="xterm")
-                )
-
-            self.search_results.insert("end", f"{text}\n\n")
-
-        self.status_var.set(f"Semantic search complete: {query}")
+        self.status_var.set(f"Semantic search complete: {len(hits)} results ({engine_mode})")
 
     def _run_semantic_search_threaded(self, query: str):
         token = next(self._semantic_search_counter)
@@ -2174,36 +2084,13 @@ class UltimateBibleApp:
 
         def worker():
             try:
-                hits = self.semantic_engine.search(query, limit=20)
+                engine = self._ensure_semantic_engine()
+                hits = engine.search(query, limit=20)
                 self.root.after(0, lambda: self._deliver_semantic_search_results(token, query, hits, None))
             except Exception as exc:
                 self.root.after(0, lambda exc=exc: self._deliver_semantic_search_results(token, query, [], str(exc)))
 
         threading.Thread(target=worker, daemon=True).start()
-
-    def run_semantic_search(self) -> None:
-        query = self.search_entry.get().strip()
-        self.search_results.delete("1.0", "end")
-
-        if not query:
-            self.search_results.insert("end", "Enter a search query.")
-            return
-
-        try:
-            semantic_engine = self._ensure_semantic_engine()
-        except Exception as exc:
-            self.search_results.insert("end", f"Could not load semantic engine:\n{exc}")
-            self.status_var.set("Semantic engine load failed")
-            return
-
-        try:
-            hits = semantic_engine.search(query)
-        except Exception as exc:
-            self.search_results.insert("end", f"Semantic search failed:\n{exc}")
-            self.status_var.set("Semantic search failed")
-            return
-
-        self._render_semantic_hits(query, hits)
 
     def run_semantic_search_for_query(self, query: str):
         try:
@@ -2218,77 +2105,48 @@ class UltimateBibleApp:
             pass
 
         try:
-            semantic_engine = self._ensure_semantic_engine()
+            self._ensure_semantic_engine()
         except Exception as exc:
             self.search_results.delete("1.0", "end")
             self.search_results.insert("end", f"Could not load semantic engine:\n{exc}")
             self.status_var.set("Semantic engine load failed")
             return
 
-        try:
-            hits = semantic_engine.search(query)
-        except Exception as exc:
-            self.search_results.delete("1.0", "end")
-            self.search_results.insert("end", f"Semantic search failed:\n{exc}")
-            self.status_var.set("Semantic search failed")
-            return
-
-        self._render_semantic_hits(query, hits)
+        self._run_semantic_search_threaded(query)
 
     def run_semantic_search(self) -> None:
         query = self.search_entry.get().strip()
-        self.search_results.delete("1.0", "end")
-
-        if not query:
-            self.search_results.insert("end", "Enter a search query.")
-            return
-
         try:
-            semantic_engine = self._ensure_semantic_engine()
+            self.right_notebook.select(self.study_tab)
+        except Exception:
+            pass
+        try:
+            self._ensure_semantic_engine()
         except Exception as exc:
+            self.search_results.delete("1.0", "end")
             self.search_results.insert("end", f"Could not load semantic engine:\n{exc}")
             self.status_var.set("Semantic engine load failed")
             return
+        if not query:
+            self.search_results.delete("1.0", "end")
+            return
+        self._run_semantic_search_threaded(query)
 
+    def _open_semantic_hit_in_reader(self, hit):
         try:
-            hits = semantic_engine.search(query)
+            verse_obj = getattr(hit, "verse", None)
+            if verse_obj is None:
+                return
+            self.book_var.set(verse_obj.book)
+            self.chapter_var.set(verse_obj.chapter)
+            self.verse_var.set(verse_obj.verse)
+            self.translation_var.set(verse_obj.translation)
+            self.display_current_verse()
         except Exception as exc:
-            self.search_results.insert("end", f"Semantic search failed:\n{exc}")
-            self.status_var.set("Semantic search failed")
-            return
-
-        if not hits:
-            self.search_results.insert("end", "No semantic matches found.")
-            self.status_var.set("No semantic matches found")
-            return
-
-        self.search_results.insert("end", f"Semantic results for: {query}\n\n")
-
-        for i, hit in enumerate(hits[:20], start=1):
-            ref = (
-                getattr(hit, "reference", None)
-                or getattr(hit, "ref", None)
-                or getattr(hit, "label", None)
-                or "Unknown reference"
-            )
-
-            text = (
-                getattr(hit, "text", None)
-                or getattr(hit, "verse_text", None)
-                or getattr(hit, "content", None)
-                or ""
-            )
-
-            score = getattr(hit, "score", None)
-
-            if score is not None:
-                self.search_results.insert("end", f"{i}. {ref}  (score={score:.3f})\n")
-            else:
-                self.search_results.insert("end", f"{i}. {ref}\n")
-
-            self.search_results.insert("end", f"{text}\n\n")
-
-        self.status_var.set(f"Semantic search complete: {query}")
+            try:
+                messagebox.showerror("Semantic Result", f"Could not open verse:\n\n{exc}")
+            except Exception:
+                pass
 
     def open_semantic_result_popup(self, hit):
         top = tk.Toplevel(self.root)
