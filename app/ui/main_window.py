@@ -676,6 +676,66 @@ class UltimateBibleApp:
         except Exception as exc:
             print(f"Could not start map callback server: {exc}")
 
+    def _hide_semantic_result_tooltip(self, event=None):
+        tip = getattr(self, "_semantic_result_tooltip", None)
+        if tip is not None:
+            try:
+                tip.destroy()
+            except Exception:
+                pass
+            self._semantic_result_tooltip = None
+
+    def _show_semantic_result_tooltip(self, event, hit):
+        verse_obj = getattr(hit, "verse", None)
+        if verse_obj is None:
+            return
+
+        self._hide_semantic_result_tooltip()
+
+        try:
+            ref = pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)
+            text = self.sanitize_display_text(verse_obj.text or "")
+            if len(text) > 260:
+                text = text[:257].rstrip() + "..."
+
+            tip = tk.Toplevel(self.root)
+            tip.transient(self.root)
+            tip.resizable(False, False)
+
+            x = getattr(event, "x_root", self.root.winfo_rootx() + 20) + 12
+            y = getattr(event, "y_root", self.root.winfo_rooty() + 20) + 12
+            tip.geometry(f"+{x}+{y}")
+
+            frame = ttk.Frame(tip, padding=8)
+            frame.pack(fill="both", expand=True)
+
+            title = ttk.Label(
+                frame,
+                text=f"{ref} [{verse_obj.translation.upper()}]",
+                font=("TkDefaultFont", 10, "bold"),
+                justify="left",
+            )
+            title.pack(anchor="w")
+
+            body = tk.Label(
+                frame,
+                text=text,
+                justify="left",
+                anchor="nw",
+                bg="#fff8dc",
+                relief="solid",
+                borderwidth=1,
+                padx=8,
+                pady=6,
+                wraplength=420,
+            )
+            body.pack(fill="both", expand=True, pady=(6, 0))
+
+            self._semantic_result_tooltip = tip
+            tip.lift()
+        except Exception:
+            self._semantic_result_tooltip = None
+
     def _hide_strongs_tooltip(self, event=None):
         tip = getattr(self, "_strongs_tooltip", None)
         if tip is not None:
@@ -2027,12 +2087,18 @@ class UltimateBibleApp:
                 self.search_results.tag_bind(
                     tag,
                     "<Enter>",
-                    lambda e: self.search_results.config(cursor="hand2")
+                    lambda e, h=hit: (
+                        self.search_results.config(cursor="hand2"),
+                        self._show_semantic_result_tooltip(e, h)
+                    )
                 )
                 self.search_results.tag_bind(
                     tag,
                     "<Leave>",
-                    lambda e: self.search_results.config(cursor="xterm")
+                    lambda e: (
+                        self.search_results.config(cursor="xterm"),
+                        self._hide_semantic_result_tooltip()
+                    )
                 )
 
             if score is not None:
@@ -2105,6 +2171,7 @@ class UltimateBibleApp:
         self._run_semantic_search_threaded(query)
 
     def _open_semantic_hit_in_reader(self, hit):
+        self._hide_semantic_result_tooltip()
         try:
             verse_obj = getattr(hit, "verse", None)
             if verse_obj is None:
