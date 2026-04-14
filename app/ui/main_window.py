@@ -2175,23 +2175,28 @@ class UltimateBibleApp:
                 self.sanitize_display_text(verse_obj.text or "") + "\n\n"
             )
 
+            if idx < len(self._semantic_preview_stack):
+                self.commentary_output.insert(
+                "end",
+                self._semantic_preview_divider() + "\n\n"
+    )
+
             return "  " + ("─" * max(16, chars - 4)) + "  "
 
         self.commentary_output.insert(
             "end",
             "Tip: Click a blue reference above to open it in the center reader.\n"
         )
+
     def _semantic_preview_divider(self) -> str:
         try:
             widget = self.commentary_output
             pixel_width = max(widget.winfo_width(), 200)
-            font = tkfont.nametofont(widget.cget("font"))
-            char_px = max(font.measure("─"), 1)
-            chars = max(20, min(120, pixel_width // char_px))
+            avg_char_px = 8
+            chars = max(20, min(120, (pixel_width // avg_char_px) - 4))
             return "─" * chars
         except Exception:
-            return "─" * 60
-
+            return "─" * 56
 
     def _open_semantic_preview_verse(self, verse_obj):
         try:
