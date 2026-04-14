@@ -4,6 +4,7 @@ import re
 import sqlite3
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+import tkinter.font as tkfont
 from pathlib import Path
 import webbrowser
 import threading
@@ -2174,10 +2175,22 @@ class UltimateBibleApp:
                 self.sanitize_display_text(verse_obj.text or "") + "\n\n"
             )
 
+            return "  " + ("─" * max(16, chars - 4)) + "  "
+
         self.commentary_output.insert(
             "end",
             "Tip: Click a blue reference above to open it in the center reader.\n"
         )
+    def _semantic_preview_divider(self) -> str:
+        try:
+            widget = self.commentary_output
+            pixel_width = max(widget.winfo_width(), 200)
+            font = tkfont.nametofont(widget.cget("font"))
+            char_px = max(font.measure("─"), 1)
+            chars = max(20, min(120, pixel_width // char_px))
+            return "─" * chars
+        except Exception:
+            return "─" * 60
 
 
     def _open_semantic_preview_verse(self, verse_obj):
@@ -2227,23 +2240,6 @@ class UltimateBibleApp:
         self._render_semantic_preview_stack()
         self.status_var.set(f"Previewed {pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)}")
 
-    def _preview_semantic_hit(self, hit):
-        verse_obj = getattr(hit, "verse", None)
-        if verse_obj is None:
-            return
-
-        try:
-            self.right_notebook.select(self.commentary_tab)
-        except Exception:
-            pass
-
-        self.commentary_output.delete("1.0", "end")
-
-        ref = pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)
-        text = self.sanitize_display_text(verse_obj.text or "")
-
-        self.commentary_output.insert("end", f"{ref} [{verse_obj.translation.upper()}]\n\n")
-        self.commentary_output.insert("end", text)
 
     def _handle_semantic_click(self, event, hit):
         self._hide_semantic_result_tooltip()
