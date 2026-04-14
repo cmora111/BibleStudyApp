@@ -2082,7 +2082,7 @@ class UltimateBibleApp:
                 self.search_results.tag_bind(
                     tag,
                     "<Button-1>",
-                    lambda e, h=hit: self._open_semantic_hit_in_reader(h)
+                    lambda e, h=hit: self._handle_semantic_click(e, h)
                 )
                 self.search_results.tag_bind(
                     tag,
@@ -2112,6 +2112,42 @@ class UltimateBibleApp:
                 self.search_results.insert("end", "\n")
 
         self.status_var.set(f"Semantic search complete: {len(hits)} results ({engine_mode})")
+
+    def _preview_semantic_hit(self, hit):
+        verse_obj = getattr(hit, "verse", None)
+        if verse_obj is None:
+            return
+
+        try:
+            self.right_notebook.select(self.commentary_tab)
+        except Exception:
+            pass
+
+        self.commentary_output.delete("1.0", "end")
+
+        ref = pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)
+        text = self.sanitize_display_text(verse_obj.text or "")
+
+        self.commentary_output.insert("end", f"{ref} [{verse_obj.translation.upper()}]\n\n")
+        self.commentary_output.insert("end", text)
+
+    def _handle_semantic_click(self, event, hit):
+        self._hide_semantic_result_tooltip()
+
+        verse_obj = getattr(hit, "verse", None)
+        if verse_obj is None:
+            return
+
+        # SHIFT = open in main reader
+        if event.state & 0x0001:
+            self._open_semantic_hit_in_reader(hit)
+            return
+
+        # Default = open in right panel preview
+        try:
+            self._preview_semantic_hit(hit)
+        except Exception:
+            self._open_semantic_hit_in_reader(hit)
 
     def _run_semantic_search_threaded(self, query: str):
         token = next(self._semantic_search_counter)
