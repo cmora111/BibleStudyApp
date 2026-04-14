@@ -1996,6 +1996,7 @@ class UltimateBibleApp:
 
         engine_mode = getattr(self.semantic_engine, "mode", "semantic")
         self.search_results.insert("end", f"Semantic engine mode: {engine_mode}\n\n")
+
         for idx, hit in enumerate(hits):
             verse_obj = getattr(hit, "verse", None)
             if verse_obj is not None:
@@ -2008,20 +2009,36 @@ class UltimateBibleApp:
                 translation = "N/A"
 
             score = getattr(hit, "score", None)
-            if score is not None:
-                header = f"{ref} [{translation}]  score={score:.3f}"
-            else:
-                header = f"{ref} [{translation}]"
 
-            start = self.search_results.index("end")
-            self.search_results.insert("end", header + "\n")
-            end = self.search_results.index("end")
-            tag = f"search_ref_{idx}"
-            self.search_results.tag_add(tag, start, end)
-            self.search_results.tag_config(tag, foreground="#1a73e8", underline=True)
-            self.search_results.tag_bind(tag, "<Button-1>", lambda e, h=hit: self._open_semantic_hit_in_reader(h))
-            self.search_results.tag_bind(tag, "<Enter>", lambda e: self.search_results.config(cursor="hand2"))
-            self.search_results.tag_bind(tag, "<Leave>", lambda e: self.search_results.config(cursor="xterm"))
+            clickable_label = f"{ref} [{translation}]"
+            start = self.search_results.index("end-1c")
+            self.search_results.insert("end", clickable_label)
+            end = self.search_results.index("end-1c")
+
+            if verse_obj is not None:
+                tag = f"search_ref_{idx}"
+                self.search_results.tag_add(tag, start, end)
+                self.search_results.tag_configure(tag, foreground="#1a73e8", underline=1)
+                self.search_results.tag_bind(
+                    tag,
+                    "<Button-1>",
+                    lambda e, h=hit: self._open_semantic_hit_in_reader(h)
+                )
+                self.search_results.tag_bind(
+                    tag,
+                    "<Enter>",
+                    lambda e: self.search_results.config(cursor="hand2")
+                )
+                self.search_results.tag_bind(
+                    tag,
+                    "<Leave>",
+                    lambda e: self.search_results.config(cursor="xterm")
+                )
+
+            if score is not None:
+                self.search_results.insert("end", f"  score={score:.3f}\n")
+            else:
+                self.search_results.insert("end", "\n")
 
             if body:
                 self.search_results.insert("end", body + "\n\n")
