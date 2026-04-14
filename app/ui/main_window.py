@@ -57,6 +57,7 @@ class UltimateBibleApp:
         self.import_format_var = tk.StringVar(value="auto")
         self.lexicon_format_var = tk.StringVar(value="auto")
 
+        self._semantic_preview_stack = []
         self.semantic_engine = None
         self.strongs_engine = None
         self.study_assistant = None
@@ -539,6 +540,10 @@ class UltimateBibleApp:
         ttk.Entry(top, textvariable=self.strongs_query_var).pack(side="left", fill="x", expand=True, padx=(0, 6))
         ttk.Button(top, text="Strong's Lookup", command=self.run_strongs_lookup).pack(side="left")
         ttk.Button(top, text="Commentary", command=self.generate_commentary).pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="Clear Semantic Previews", command=self._clear_semantic_preview_stack).pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="Clear Semantic Previews",
+                   command=self._clear_semantic_preview_stack).pack(side="left",
+                                                                    padx=(6, 0))
         self.commentary_output = tk.Text(frame, wrap="word", height=20)
         self.commentary_output.pack(fill="both", expand=True, padx=6, pady=6)
 
@@ -2113,6 +2118,115 @@ class UltimateBibleApp:
 
         self.status_var.set(f"Semantic search complete: {len(hits)} results ({engine_mode})")
 
+    def _clear_semantic_preview_stack(self):
+        self._semantic_preview_stack = []
+
+        if hasattr(self, "commentary_output"):
+            self.commentary_output.delete("1.0", "end")
+            self.commentary_output.insert("end", "Semantic preview stack cleared.\n")
+
+        self.status_var.set("Semantic preview stack cleared")
+
+
+    def _render_semantic_preview_stack(self):
+        if not hasattr(self, "commentary_output"):
+            return
+
+        self.commentary_output.delete("1.0", "end")
+
+        if not self._semantic_preview_stack:
+            self.commentary_output.insert("end", "No semantic previews yet.\n")
+            return
+
+        self.commentary_output.tag_configure(
+            "semantic_preview_header",
+            font=("TkDefaultFont", 10, "bold")
+        )
+
+        for idx, verse_obj in enumerate(self._semantic_preview_stack, start=1):
+            ref = pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)
+            header = f"{idx}. {ref} [{verse_obj.translation.upper()}]\n"
+            start = self.commentary_output.index("end")
+            self.commentary_output.insert("end", header, ("semantic_preview_header",))
+            end = self.commentary_output.index("end")
+
+            tag = f"semantic_preview_ref_{idx}_{verse_obj.book}_{verse_obj.chapter}_{verse_obj.verse}"
+            self.commentary_output.tag_add(tag, start, end)
+            self.commentary_output.tag_configure(tag, foreground="#1a73e8", underline=1)
+            self.commentary_output.tag_bind(
+                tag,
+                "<Button-1>",
+                lambda e, v=verse_obj: self._open_semantic_preview_verse(v)
+            )
+            self.commentary_output.tag_bind(
+                tag,
+                "<Enter>",
+                lambda e: self.commentary_output.config(cursor="hand2")
+            )
+            self.commentary_output.tag_bind(
+                tag,
+                "<Leave>",
+                lambda e: self.commentary_output.config(cursor="xterm")
+            )
+
+            self.commentary_output.insert(
+                "end",
+                self.sanitize_display_text(verse_obj.text or "") + "\n\n"
+            )
+
+        self.commentary_output.insert(
+            "end",
+            "Tip: Click a blue reference above to open it in the center reader.\n"
+        )
+
+
+    def _open_semantic_preview_verse(self, verse_obj):
+        try:
+            self.book_var.set(verse_obj.book)
+            self.chapter_var.set(verse_obj.chapter)
+            self.verse_var.set(verse_obj.verse)
+            self.translation_var.set(verse_obj.translation)
+            self.display_current_verse()
+        except Exception as exc:
+            try:
+                messagebox.showerror("Semantic Preview", f"Could not open verse:\n\n{exc}")
+            except Exception:
+                pass
+
+
+    def _preview_semantic_hit(self, hit):
+        verse_obj = getattr(hit, "verse", None)
+        if verse_obj is None:
+            return
+
+        try:
+            self.right_notebook.select(self.commentary_tab)
+        except Exception:
+            pass
+
+        key = (
+            verse_obj.translation.lower(),
+            verse_obj.book.lower(),
+            int(verse_obj.chapter),
+            int(verse_obj.verse),
+        )
+
+        existing_keys = {
+            (
+                v.translation.lower(),
+                v.book.lower(),
+                int(v.chapter),
+                int(v.verse),
+            )
+            for v in self._semantic_preview_stack
+        }
+
+        if key not in existing_keys:
+            self._semantic_preview_stack.append(verse_obj)
+
+        self._render_semantic_preview_stack()
+        self.status_var.set(f"Previewed {pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)}")
+
     def _preview_semantic_hit(self, hit):
         verse_obj = getattr(hit, "verse", None)
         if verse_obj is None:
@@ -2138,16 +2252,11 @@ class UltimateBibleApp:
         if verse_obj is None:
             return
 
-        # SHIFT = open in main reader
         if event.state & 0x0001:
             self._open_semantic_hit_in_reader(hit)
             return
 
-        # Default = open in right panel preview
-        try:
-            self._preview_semantic_hit(hit)
-        except Exception:
-            self._open_semantic_hit_in_reader(hit)
+        self._preview_semantic_hit(hit)
 
     def _run_semantic_search_threaded(self, query: str):
         token = next(self._semantic_search_counter)
