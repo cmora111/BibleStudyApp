@@ -149,6 +149,26 @@ class UltimateBibleApp:
             self.semantic_engine = SemanticSearchEngine(self.db, translation=translation)
         return self.semantic_engine
 
+    def _clear_semantic_preview_stack(self):
+        self._semantic_preview_stack = []
+        self._render_semantic_preview_stack()
+        self.status_var.set("Semantic preview stack cleared")
+
+
+    def _remove_semantic_preview_at(self, index: int):
+        try:
+            if 0 <= index < len(self._semantic_preview_stack):
+                removed = self._semantic_preview_stack.pop(index)
+                self._render_semantic_preview_stack()
+                self.status_var.set(
+                    f"Removed preview {pretty_ref(removed.book, removed.chapter, removed.verse)}"
+                )
+        except Exception as exc:
+            try:
+                messagebox.showerror("Semantic Preview", f"Could not remove preview:\n\n{exc}")
+            except Exception:
+                pass
+
     def _ensure_strongs_engine(self):
         translation = (self.translation_var.get() or "").strip().lower()
         if self.strongs_engine is None:
@@ -175,6 +195,7 @@ class UltimateBibleApp:
         self.semantic_engine = None
         self.strongs_engine = None
         self.study_assistant = None
+        self._semantic_preview_stack = []
 
         try:
             self.display_current_verse(skip_heavy_panels=True)
@@ -335,7 +356,10 @@ class UltimateBibleApp:
 
         if tab_text == "Commentary/Strong's":
             try:
-                self._populate_commentary_tab_for_current_verse()
+                if getattr(self, "_semantic_preview_stack", []):
+                    self._render_semantic_preview_stack()
+                else:
+                    self._populate_commentary_tab_for_current_verse()
             except Exception as exc:
                 try:
                     self.commentary_output.delete("1.0", "end")
@@ -2139,37 +2163,76 @@ class UltimateBibleApp:
             self.commentary_output.insert("end", "No semantic previews yet.\n")
             return
 
+        self.commentary_output.insert("end", "Semantic Preview Stack\n\n")
         self.commentary_output.tag_configure(
-            "semantic_preview_header",
+            "semantic_stack_title",
             font=("TkDefaultFont", 10, "bold")
         )
+        self.commentary_output.tag_add("semantic_stack_title", "1.0", "1.end")
 
         for idx, verse_obj in enumerate(self._semantic_preview_stack, start=1):
             ref = pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)
-            header = f"{idx}. {ref} [{verse_obj.translation.upper()}]\n"
-            start = self.commentary_output.index("end")
-            self.commentary_output.insert("end", header, ("semantic_preview_header",))
-            end = self.commentary_output.index("end")
+            clickable_label = f"{idx}. {ref} [{verse_obj.translation.upper()}]"
+            remove_label = "   [remove]"
 
-            tag = f"semantic_preview_ref_{idx}_{verse_obj.book}_{verse_obj.chapter}_{verse_obj.verse}"
-            self.commentary_output.tag_add(tag, start, end)
-            self.commentary_output.tag_configure(tag, foreground="#1a73e8", underline=1)
+            # clickable verse ref
+            start = self.commentary_output.index("end")
+            self.commentary_output.insert("end", clickable_label)
+            end = self.commentary_output.index("end-1c")
+
+            ref_tag = f"semantic_preview_ref_{idx}_{verse_obj.book}_{verse_obj.chapter}_{verse_obj.verse}"
+            self.commentary_output.tag_add(ref_tag, start, end)
+            self.commentary_output.tag_configure(
+                ref_tag,
+                foreground="#1a73e8",
+                underline=1,
+                font=("TkDefaultFont", 10, "bold"),
+            )
             self.commentary_output.tag_bind(
-                tag,
+                ref_tag,
                 "<Button-1>",
                 lambda e, v=verse_obj: self._open_semantic_preview_verse(v)
             )
             self.commentary_output.tag_bind(
-                tag,
+                ref_tag,
                 "<Enter>",
                 lambda e: self.commentary_output.config(cursor="hand2")
             )
             self.commentary_output.tag_bind(
-                tag,
+                ref_tag,
                 "<Leave>",
                 lambda e: self.commentary_output.config(cursor="xterm")
             )
 
+            # clickable remove
+            remove_start = self.commentary_output.index("end")
+            self.commentary_output.insert("end", remove_label)
+            remove_end = self.commentary_output.index("end-1c")
+
+            remove_tag = f"semantic_preview_remove_{idx}"
+            self.commentary_output.tag_add(remove_tag, remove_start, remove_end)
+            self.commentary_output.tag_configure(
+                remove_tag,
+                foreground="#b00020",
+                underline=1,
+            )
+            self.commentary_output.tag_bind(
+                remove_tag,
+                "<Button-1>",
+                lambda e, i=idx - 1: self._remove_semantic_preview_at(i)
+            )
+            self.commentary_output.tag_bind(
+                remove_tag,
+                "<Enter>",
+                lambda e: self.commentary_output.config(cursor="hand2")
+            )
+            self.commentary_output.tag_bind(
+                remove_tag,
+                "<Leave>",
+                lambda e: self.commentary_output.config(cursor="xterm")
+            )
+
+            self.commentary_output.insert("end", "\n")
             self.commentary_output.insert(
                 "end",
                 self.sanitize_display_text(verse_obj.text or "") + "\n\n"
@@ -2177,16 +2240,43 @@ class UltimateBibleApp:
 
             if idx < len(self._semantic_preview_stack):
                 self.commentary_output.insert(
-                "end",
-                self._semantic_preview_divider() + "\n\n"
-    )
+                    "end",
+                    self._semantic_preview_divider() + "\n\n"
+                )
 
-            return "  " + ("─" * max(16, chars - 4)) + "  "
+        clear_start = self.commentary_output.index("end")
+        self.commentary_output.insert("end", "[Clear all semantic previews]")
+        clear_end = self.commentary_output.index("end-1c")
+
+        clear_tag = "semantic_preview_clear_all"
+        self.commentary_output.tag_add(clear_tag, clear_start, clear_end)
+        self.commentary_output.tag_configure(
+            clear_tag,
+            foreground="#b00020",
+            underline=1,
+            font=("TkDefaultFont", 10, "bold"),
+        )
+        self.commentary_output.tag_bind(
+            clear_tag,
+            "<Button-1>",
+            lambda e: self._clear_semantic_preview_stack()
+        )
+        self.commentary_output.tag_bind(
+            clear_tag,
+            "<Enter>",
+            lambda e: self.commentary_output.config(cursor="hand2")
+        )
+        self.commentary_output.tag_bind(
+            clear_tag,
+            "<Leave>",
+            lambda e: self.commentary_output.config(cursor="xterm")
+        )
 
         self.commentary_output.insert(
             "end",
-            "Tip: Click a blue reference above to open it in the center reader.\n"
-        )
+            "\n\nTip: Click a blue reference above to open it in the center reader.\n"
+            )
+
 
     def _semantic_preview_divider(self) -> str:
         try:
@@ -2194,7 +2284,7 @@ class UltimateBibleApp:
             pixel_width = max(widget.winfo_width(), 200)
             avg_char_px = 8
             chars = max(20, min(120, (pixel_width // avg_char_px) - 4))
-            return "─" * chars
+            return "  " + ("─" * max(16, chars - 4)) + "  "
         except Exception:
             return "─" * 56
 
@@ -2211,16 +2301,10 @@ class UltimateBibleApp:
             except Exception:
                 pass
 
-
     def _preview_semantic_hit(self, hit):
         verse_obj = getattr(hit, "verse", None)
         if verse_obj is None:
             return
-
-        try:
-            self.right_notebook.select(self.commentary_tab)
-        except Exception:
-            pass
 
         key = (
             verse_obj.translation.lower(),
@@ -2242,8 +2326,15 @@ class UltimateBibleApp:
         if key not in existing_keys:
             self._semantic_preview_stack.append(verse_obj)
 
+        try:
+            self.right_notebook.select(self.commentary_tab)
+        except Exception:
+            pass
+
         self._render_semantic_preview_stack()
-        self.status_var.set(f"Previewed {pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)}")
+        self.status_var.set(
+            f"Previewed {pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)}"
+        )
 
 
     def _handle_semantic_click(self, event, hit):
