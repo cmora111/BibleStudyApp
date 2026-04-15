@@ -2143,15 +2143,6 @@ class UltimateBibleApp:
 
         self.status_var.set(f"Semantic search complete: {len(hits)} results ({engine_mode})")
 
-    def _clear_semantic_preview_stack(self):
-        self._semantic_preview_stack = []
-
-        if hasattr(self, "commentary_output"):
-            self.commentary_output.delete("1.0", "end")
-            self.commentary_output.insert("end", "Semantic preview stack cleared.\n")
-
-        self.status_var.set("Semantic preview stack cleared")
-
 
     def _render_semantic_preview_stack(self):
         if not hasattr(self, "commentary_output"):
@@ -2178,7 +2169,7 @@ class UltimateBibleApp:
             # clickable verse ref
             start = self.commentary_output.index("end")
             self.commentary_output.insert("end", clickable_label)
-            end = self.commentary_output.index("end-1c")
+            end = f"{start}+{len(clickable_label)}c"
 
             ref_tag = f"semantic_preview_ref_{idx}_{verse_obj.book}_{verse_obj.chapter}_{verse_obj.verse}"
             self.commentary_output.tag_add(ref_tag, start, end)
@@ -2188,6 +2179,7 @@ class UltimateBibleApp:
                 underline=1,
                 font=("TkDefaultFont", 10, "bold"),
             )
+            self.commentary_output.tag_raise(ref_tag)
             self.commentary_output.tag_bind(
                 ref_tag,
                 "<Button-1>",
@@ -2207,7 +2199,7 @@ class UltimateBibleApp:
             # clickable remove
             remove_start = self.commentary_output.index("end")
             self.commentary_output.insert("end", remove_label)
-            remove_end = self.commentary_output.index("end-1c")
+            remove_end = f"{remove_start}+{len(remove_label)}c"
 
             remove_tag = f"semantic_preview_remove_{idx}"
             self.commentary_output.tag_add(remove_tag, remove_start, remove_end)
@@ -2216,6 +2208,7 @@ class UltimateBibleApp:
                 foreground="#b00020",
                 underline=1,
             )
+            self.commentary_output.tag_raise(remove_tag)
             self.commentary_output.tag_bind(
                 remove_tag,
                 "<Button-1>",
@@ -2244,7 +2237,7 @@ class UltimateBibleApp:
                     self._semantic_preview_divider() + "\n\n"
                 )
 
-        clear_start = self.commentary_output.index("end")
+        clear_start = self.commentary_output.index("end-1c")
         self.commentary_output.insert("end", "[Clear all semantic previews]")
         clear_end = self.commentary_output.index("end-1c")
 
