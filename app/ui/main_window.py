@@ -11,6 +11,7 @@ import threading
 import itertools
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import numpy
 
 from app.core.bible_db import BibleDB
 from app.core.config import DB_FILE
@@ -59,6 +60,7 @@ class UltimateBibleApp:
         self.lexicon_format_var = tk.StringVar(value="auto")
 
         self._semantic_preview_stack = []
+        self._semantic_preview_collapsed = set()
         self.semantic_engine = None
         self.strongs_engine = None
         self.study_assistant = None
@@ -2144,132 +2146,117 @@ class UltimateBibleApp:
         self.status_var.set(f"Semantic search complete: {len(hits)} results ({engine_mode})")
 
 
+    def _toggle_semantic_preview(self, verse_obj):
+        key = (
+            verse_obj.translation.lower(),
+            verse_obj.book.lower(),
+            int(verse_obj.chapter),
+            int(verse_obj.verse),
+        )
+
+        if key in self._semantic_preview_collapsed:
+            self._semantic_preview_collapsed.remove(key)
+        else:
+            self._semantic_preview_collapsed.add(key)
+
+        self._render_semantic_preview_stack()
+
+
     def _render_semantic_preview_stack(self):
         if not hasattr(self, "commentary_output"):
             return
 
-        self.commentary_output.delete("1.0", "end")
+        w = self.commentary_output
+        w.delete("1.0", "end")
 
         if not self._semantic_preview_stack:
-            self.commentary_output.insert("end", "No semantic previews yet.\n")
+            w.insert("end", "No semantic previews yet.\n")
             return
 
-        self.commentary_output.insert("end", "Semantic Preview Stack\n\n")
-        self.commentary_output.tag_configure(
-            "semantic_stack_title",
-            font=("TkDefaultFont", 10, "bold")
-        )
-        self.commentary_output.tag_add("semantic_stack_title", "1.0", "1.end")
+        w.insert("end", "Semantic Preview Stack\n\n")
+        w.tag_configure("semantic_stack_title", font=("TkDefaultFont", 10, "bold"))
+        w.tag_add("semantic_stack_title", "1.0", "1.end")
 
         for idx, verse_obj in enumerate(self._semantic_preview_stack, start=1):
+            key = (
+                verse_obj.translation.lower(),
+                verse_obj.book.lower(),
+                int(verse_obj.chapter),
+                int(verse_obj.verse),
+            )
+            collapsed = key in self._semantic_preview_collapsed
+            marker = "▶" if collapsed else "▼"
+
             ref = pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)
-            clickable_label = f"{idx}. {ref} [{verse_obj.translation.upper()}]"
+            clickable_label = f"{idx}. {marker} {ref} [{verse_obj.translation.upper()}]"
             remove_label = "   [remove]"
 
             # clickable verse ref
-            start = self.commentary_output.index("end")
-            self.commentary_output.insert("end", clickable_label)
-            end = f"{start}+{len(clickable_label)}c"
-
             ref_tag = f"semantic_preview_ref_{idx}_{verse_obj.book}_{verse_obj.chapter}_{verse_obj.verse}"
-            self.commentary_output.tag_add(ref_tag, start, end)
-            self.commentary_output.tag_configure(
+            ref_start = w.index("end-1c")
+            w.insert("end", clickable_label)
+            ref_end = f"{ref_start}+{len(clickable_label)}c"
+
+            w.tag_add(ref_tag, ref_start, ref_end)
+            w.tag_configure(
                 ref_tag,
                 foreground="#1a73e8",
                 underline=1,
                 font=("TkDefaultFont", 10, "bold"),
             )
-            self.commentary_output.tag_raise(ref_tag)
-            self.commentary_output.tag_bind(
-                ref_tag,
-                "<Button-1>",
-                lambda e, v=verse_obj: self._open_semantic_preview_verse(v)
-            )
-            self.commentary_output.tag_bind(
-                ref_tag,
-                "<Enter>",
-                lambda e: self.commentary_output.config(cursor="hand2")
-            )
-            self.commentary_output.tag_bind(
-                ref_tag,
-                "<Leave>",
-                lambda e: self.commentary_output.config(cursor="xterm")
-            )
+            w.tag_bind(ref_tag, "<Button-1>", lambda e, v=verse_obj: self._toggle_semantic_preview(v))
+            w.tag_bind(ref_tag, "<Enter>", lambda e: w.config(cursor="hand2"))
+            w.tag_bind(ref_tag, "<Leave>", lambda e: w.config(cursor="xterm"))
+            w.tag_raise(ref_tag)
 
             # clickable remove
-            remove_start = self.commentary_output.index("end")
-            self.commentary_output.insert("end", remove_label)
+            remove_tag = f"semantic_preview_remove_{idx}"
+            remove_start = w.index("end-1c")
+            w.insert("end", remove_label)
             remove_end = f"{remove_start}+{len(remove_label)}c"
 
-            remove_tag = f"semantic_preview_remove_{idx}"
-            self.commentary_output.tag_add(remove_tag, remove_start, remove_end)
-            self.commentary_output.tag_configure(
-                remove_tag,
-                foreground="#b00020",
-                underline=1,
-            )
-            self.commentary_output.tag_raise(remove_tag)
-            self.commentary_output.tag_bind(
-                remove_tag,
-                "<Button-1>",
-                lambda e, i=idx - 1: self._remove_semantic_preview_at(i)
-            )
-            self.commentary_output.tag_bind(
-                remove_tag,
-                "<Enter>",
-                lambda e: self.commentary_output.config(cursor="hand2")
-            )
-            self.commentary_output.tag_bind(
-                remove_tag,
-                "<Leave>",
-                lambda e: self.commentary_output.config(cursor="xterm")
-            )
+            w.tag_add(remove_tag, remove_start, remove_end)
+            w.tag_configure(remove_tag, foreground="#b00020", underline=1)
+            w.tag_bind(remove_tag, "<Button-1>", lambda e, i=idx - 1: self._remove_semantic_preview_at(i))
+            w.tag_bind(remove_tag, "<Enter>", lambda e: w.config(cursor="hand2"))
+            w.tag_bind(remove_tag, "<Leave>", lambda e: w.config(cursor="xterm"))
+            w.tag_raise(remove_tag)
 
-            self.commentary_output.insert("end", "\n")
-            self.commentary_output.insert(
-                "end",
-                self.sanitize_display_text(verse_obj.text or "") + "\n\n"
-            )
+            # end header line
+            w.insert("end", "\n")
 
+            # body
+            if not collapsed:
+                w.insert("end", self.sanitize_display_text(verse_obj.text or ""))
+                w.insert("end", "\n\n")
+            else:
+                w.insert("end", "\n")
+
+            # divider between items
             if idx < len(self._semantic_preview_stack):
-                self.commentary_output.insert(
-                    "end",
-                    self._semantic_preview_divider() + "\n\n"
-                )
+                w.insert("end", self._semantic_preview_divider())
+                w.insert("end", "\n\n")
 
-        clear_start = self.commentary_output.index("end-1c")
-        self.commentary_output.insert("end", "[Clear all semantic previews]")
-        clear_end = self.commentary_output.index("end-1c")
-
+        # clear all
         clear_tag = "semantic_preview_clear_all"
-        self.commentary_output.tag_add(clear_tag, clear_start, clear_end)
-        self.commentary_output.tag_configure(
+        clear_label = "[Clear all semantic previews]"
+        clear_start = w.index("end-1c")
+        w.insert("end", clear_label)
+        clear_end = f"{clear_start}+{len(clear_label)}c"
+
+        w.tag_add(clear_tag, clear_start, clear_end)
+        w.tag_configure(
             clear_tag,
             foreground="#b00020",
             underline=1,
             font=("TkDefaultFont", 10, "bold"),
         )
-        self.commentary_output.tag_bind(
-            clear_tag,
-            "<Button-1>",
-            lambda e: self._clear_semantic_preview_stack()
-        )
-        self.commentary_output.tag_bind(
-            clear_tag,
-            "<Enter>",
-            lambda e: self.commentary_output.config(cursor="hand2")
-        )
-        self.commentary_output.tag_bind(
-            clear_tag,
-            "<Leave>",
-            lambda e: self.commentary_output.config(cursor="xterm")
-        )
+        w.tag_bind(clear_tag, "<Button-1>", lambda e: self._clear_semantic_preview_stack())
+        w.tag_bind(clear_tag, "<Enter>", lambda e: w.config(cursor="hand2"))
+        w.tag_bind(clear_tag, "<Leave>", lambda e: w.config(cursor="xterm"))
+        w.tag_raise(clear_tag)
 
-        self.commentary_output.insert(
-            "end",
-            "\n\nTip: Click a blue reference above to open it in the center reader.\n"
-            )
-
+        w.insert("end", "\n\nTip: Click a blue reference above to expand/collapse it.\n")
 
     def _semantic_preview_divider(self) -> str:
         try:
