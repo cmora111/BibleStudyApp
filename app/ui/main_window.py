@@ -153,14 +153,23 @@ class UltimateBibleApp:
 
     def _clear_semantic_preview_stack(self):
         self._semantic_preview_stack = []
+        self._semantic_preview_collapsed = set()
         self._render_semantic_preview_stack()
         self.status_var.set("Semantic preview stack cleared")
-
 
     def _remove_semantic_preview_at(self, index: int):
         try:
             if 0 <= index < len(self._semantic_preview_stack):
                 removed = self._semantic_preview_stack.pop(index)
+
+                key = (
+                    removed.translation.lower(),
+                    removed.book.lower(),
+                    int(removed.chapter),
+                    int(removed.verse),
+                )
+                self._semantic_preview_collapsed.discard(key)
+
                 self._render_semantic_preview_stack()
                 self.status_var.set(
                     f"Removed preview {pretty_ref(removed.book, removed.chapter, removed.verse)}"
@@ -2222,22 +2231,18 @@ class UltimateBibleApp:
             w.tag_bind(remove_tag, "<Leave>", lambda e: w.config(cursor="xterm"))
             w.tag_raise(remove_tag)
 
-            # end header line
             w.insert("end", "\n")
 
-            # body
             if not collapsed:
                 w.insert("end", self.sanitize_display_text(verse_obj.text or ""))
                 w.insert("end", "\n\n")
             else:
                 w.insert("end", "\n")
 
-            # divider between items
             if idx < len(self._semantic_preview_stack):
                 w.insert("end", self._semantic_preview_divider())
                 w.insert("end", "\n\n")
 
-        # clear all
         clear_tag = "semantic_preview_clear_all"
         clear_label = "[Clear all semantic previews]"
         clear_start = w.index("end-1c")
