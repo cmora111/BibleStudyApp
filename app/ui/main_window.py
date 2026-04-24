@@ -2440,6 +2440,10 @@ class UltimateBibleApp:
             if not collapsed:
                 w.insert("end", self.sanitize_display_text(verse_obj.text or ""))
                 w.insert("end", "\n\n")
+
+                crossrefs = self._semantic_preview_crossrefs_text(verse_obj)
+                if crossrefs:
+                    w.insert("end", crossrefs + "\n\n")
             else:
                 w.insert("end", "\n")
 
@@ -2468,6 +2472,45 @@ class UltimateBibleApp:
         w.tag_raise(clear_tag)
 
         w.insert("end", "\n\nTip: Click a blue reference above to expand/collapse it.\n")
+
+    def _semantic_preview_crossrefs_text(self, verse_obj, limit: int = 8) -> str:
+        try:
+            if not self.crossref_engine:
+                return ""
+
+            refs = []
+
+            if hasattr(self.crossref_engine, "get_reference_labels"):
+                refs = self.crossref_engine.get_reference_labels(
+                    verse_obj.book,
+                    int(verse_obj.chapter),
+                    int(verse_obj.verse),
+                    limit=limit,
+                )
+            elif hasattr(self.crossref_engine, "get_references"):
+                hits = self.crossref_engine.get_references(
+                    verse_obj.book,
+                    int(verse_obj.chapter),
+                    int(verse_obj.verse),
+                    limit=limit,
+                )
+                refs = [
+                    getattr(hit, "target_ref", None)
+                    or getattr(hit, "ref", None)
+                    or str(hit)
+                    for hit in hits
+                ]
+
+            if not refs:
+                return ""
+
+            lines = ["Cross references:"]
+            for ref in refs[:limit]:
+                lines.append(f"  • {ref}")
+            return "\n".join(lines)
+
+        except Exception:
+            return ""
 
     def _semantic_preview_divider(self) -> str:
         try:
@@ -2529,7 +2572,7 @@ class UltimateBibleApp:
 
 
     def _handle_semantic_click(self, event, hit):
-        print("DEBUG semantic click state: ", event.state)
+        # print("DEBUG semantic click state: ", event.state)
         try:
             self._hide_semantic_result_tooltip()
         except Exception:
