@@ -4,12 +4,14 @@ import re
 import sqlite3
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+import tkinter.font as tkfont
 from pathlib import Path
 import webbrowser
 import threading
 import itertools
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import numpy
 
 from app.core.bible_db import BibleDB
 from app.core.config import DB_FILE
@@ -57,6 +59,8 @@ class UltimateBibleApp:
         self.import_format_var = tk.StringVar(value="auto")
         self.lexicon_format_var = tk.StringVar(value="auto")
 
+        self._semantic_preview_stack = []
+        self._semantic_preview_collapsed = set()
         self.semantic_engine = None
         self.strongs_engine = None
         self.study_assistant = None
@@ -147,6 +151,35 @@ class UltimateBibleApp:
             self.semantic_engine = SemanticSearchEngine(self.db, translation=translation)
         return self.semantic_engine
 
+    def _clear_semantic_preview_stack(self):
+        self._semantic_preview_stack = []
+        self._semantic_preview_collapsed = set()
+        self._render_semantic_preview_stack()
+        self.status_var.set("Semantic preview stack cleared")
+
+    def _remove_semantic_preview_at(self, index: int):
+        try:
+            if 0 <= index < len(self._semantic_preview_stack):
+                removed = self._semantic_preview_stack.pop(index)
+
+                key = (
+                    removed.translation.lower(),
+                    removed.book.lower(),
+                    int(removed.chapter),
+                    int(removed.verse),
+                )
+                self._semantic_preview_collapsed.discard(key)
+
+                self._render_semantic_preview_stack()
+                self.status_var.set(
+                    f"Removed preview {pretty_ref(removed.book, removed.chapter, removed.verse)}"
+                )
+        except Exception as exc:
+            try:
+                messagebox.showerror("Semantic Preview", f"Could not remove preview:\n\n{exc}")
+            except Exception:
+                pass
+
     def _ensure_strongs_engine(self):
         translation = (self.translation_var.get() or "").strip().lower()
         if self.strongs_engine is None:
@@ -173,6 +206,7 @@ class UltimateBibleApp:
         self.semantic_engine = None
         self.strongs_engine = None
         self.study_assistant = None
+        self._semantic_preview_stack = []
 
         try:
             self.display_current_verse(skip_heavy_panels=True)
@@ -333,11 +367,17 @@ class UltimateBibleApp:
 
         if tab_text == "Commentary/Strong's":
             try:
-                self._populate_commentary_tab_for_current_verse()
+                if getattr(self, "_semantic_preview_stack", []):
+                    self._render_semantic_preview_stack()
+                else:
+                    self._populate_commentary_tab_for_current_verse()
             except Exception as exc:
                 try:
                     self.commentary_output.delete("1.0", "end")
-                    self.commentary_output.insert("end", f"Could not prepare Commentary/Strong's tab:\n{exc}")
+                    self.commentary_output.insert(
+                        "end",
+                        f"Could not prepare Commentary/Strong's tab:\n{exc}"
+                    )
                 except Exception:
                     pass
 
@@ -539,6 +579,10 @@ class UltimateBibleApp:
         ttk.Entry(top, textvariable=self.strongs_query_var).pack(side="left", fill="x", expand=True, padx=(0, 6))
         ttk.Button(top, text="Strong's Lookup", command=self.run_strongs_lookup).pack(side="left")
         ttk.Button(top, text="Commentary", command=self.generate_commentary).pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="Clear Semantic Previews", command=self._clear_semantic_preview_stack).pack(side="left", padx=(6, 0))
+        ttk.Button(top, text="Clear Semantic Previews",
+                   command=self._clear_semantic_preview_stack).pack(side="left",
+                                                                    padx=(6, 0))
         self.commentary_output = tk.Text(frame, wrap="word", height=20)
         self.commentary_output.pack(fill="both", expand=True, padx=6, pady=6)
 
@@ -675,6 +719,66 @@ class UltimateBibleApp:
             self._map_server_started = True
         except Exception as exc:
             print(f"Could not start map callback server: {exc}")
+
+    def _hide_semantic_result_tooltip(self, event=None):
+        tip = getattr(self, "_semantic_result_tooltip", None)
+        if tip is not None:
+            try:
+                tip.destroy()
+            except Exception:
+                pass
+            self._semantic_result_tooltip = None
+
+    def _show_semantic_result_tooltip(self, event, hit):
+        verse_obj = getattr(hit, "verse", None)
+        if verse_obj is None:
+            return
+
+        self._hide_semantic_result_tooltip()
+
+        try:
+            ref = pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)
+            text = self.sanitize_display_text(verse_obj.text or "")
+            if len(text) > 260:
+                text = text[:257].rstrip() + "..."
+
+            tip = tk.Toplevel(self.root)
+            tip.transient(self.root)
+            tip.resizable(False, False)
+
+            x = getattr(event, "x_root", self.root.winfo_rootx() + 20) + 12
+            y = getattr(event, "y_root", self.root.winfo_rooty() + 20) + 12
+            tip.geometry(f"+{x}+{y}")
+
+            frame = ttk.Frame(tip, padding=8)
+            frame.pack(fill="both", expand=True)
+
+            title = ttk.Label(
+                frame,
+                text=f"{ref} [{verse_obj.translation.upper()}]",
+                font=("TkDefaultFont", 10, "bold"),
+                justify="left",
+            )
+            title.pack(anchor="w")
+
+            body = tk.Label(
+                frame,
+                text=text,
+                justify="left",
+                anchor="nw",
+                bg="#fff8dc",
+                relief="solid",
+                borderwidth=1,
+                padx=8,
+                pady=6,
+                wraplength=420,
+            )
+            body.pack(fill="both", expand=True, pady=(6, 0))
+
+            self._semantic_result_tooltip = tip
+            tip.lift()
+        except Exception:
+            self._semantic_result_tooltip = None
 
     def _hide_strongs_tooltip(self, event=None):
         tip = getattr(self, "_strongs_tooltip", None)
@@ -993,21 +1097,27 @@ class UltimateBibleApp:
             "ruth": "ruth",
             "1samuel": "1samuel",
             "isamuel": "1samuel",
+            "i samuel": "1samuel",
             "1 samuel": "1samuel",
             "2samuel": "2samuel",
             "iisamuel": "2samuel",
+            "ii samuel": "2samuel",
             "2 samuel": "2samuel",
             "1kings": "1kings",
             "ikings": "1kings",
+            "i kings": "1kings",
             "1 kings": "1kings",
             "2kings": "2kings",
             "iikings": "2kings",
+            "ii kings": "2kings",
             "2 kings": "2kings",
             "1chronicles": "1chronicles",
             "ichronicles": "1chronicles",
+            "i chronicles": "1chronicles",
             "1 chronicles": "1chronicles",
             "2chronicles": "2chronicles",
             "iichronicles": "2chronicles",
+            "ii chronicles": "2chronicles",
             "2 chronicles": "2chronicles",
             "ezra": "ezra",
             "nehemiah": "nehemiah",
@@ -1049,9 +1159,11 @@ class UltimateBibleApp:
             "romans": "romans",
             "1corinthians": "1corinthians",
             "icorinthians": "1corinthians",
+            "i corinthians": "1corinthians",
             "1 corinthians": "1corinthians",
             "2corinthians": "2corinthians",
             "iicorinthians": "2corinthians",
+            "ii corinthians": "2corinthians",
             "2 corinthians": "2corinthians",
             "galatians": "galatians",
             "ephesians": "ephesians",
@@ -1059,15 +1171,19 @@ class UltimateBibleApp:
             "colossians": "colossians",
             "1thessalonians": "1thessalonians",
             "ithessalonians": "1thessalonians",
+            "i thessalonians": "1thessalonians",
             "1 thessalonians": "1thessalonians",
             "2thessalonians": "2thessalonians",
             "iithessalonians": "2thessalonians",
+            "ii thessalonians": "2thessalonians",
             "2 thessalonians": "2thessalonians",
             "1timothy": "1timothy",
             "itimothy": "1timothy",
+            "i timothy": "1timothy",
             "1 timothy": "1timothy",
             "2timothy": "2timothy",
             "iitimothy": "2timothy",
+            "ii timothy": "2timothy",
             "2 timothy": "2timothy",
             "titus": "titus",
             "philemon": "philemon",
@@ -1075,18 +1191,23 @@ class UltimateBibleApp:
             "james": "james",
             "1peter": "1peter",
             "ipeter": "1peter",
+            "i peter": "1peter",
             "1 peter": "1peter",
             "2peter": "2peter",
             "iipeter": "2peter",
+            "ii peter": "2peter",
             "2 peter": "2peter",
             "1john": "1john",
             "ijohn": "1john",
+            "i john": "1john",
             "1 john": "1john",
             "2john": "2john",
             "iijohn": "2john",
+            "ii john": "2john",
             "2 john": "2john",
             "3john": "3john",
             "iiijohn": "3john",
+            "iii john": "3john",
             "3 john": "3john",
             "jude": "jude",
             "revelation": "revelation",
@@ -1096,6 +1217,7 @@ class UltimateBibleApp:
 
     def normalize_current_book(self) -> str:
         return self.normalize_book_name(self.book_var.get())
+
 
     def _candidate_book_names_for_lookup(self, book_name: str):
         canonical = self.normalize_book_name(book_name)
@@ -1194,51 +1316,6 @@ class UltimateBibleApp:
             if i < len(clickable) - 1:
                 self.reader.insert("end", "  •  ", ())
         self.reader.insert("end", "\n\n", ())
-
-    def _bind_reader_strongs_tag(self, tag: str, code: str):
-        code = str(code or "").strip().upper()
-        if code.isdigit():
-            code = f"G{code}"
-
-        self.reader.tag_configure(tag, foreground="blue", underline=1)
-        self.reader.tag_bind(
-            tag,
-            "<Button-1>",
-            lambda e, c=code: self._safe_open_strongs_code(str(c), event=e)
-        )
-        self.reader.tag_bind(
-            tag,
-            "<Button-3>",
-            lambda e, c=code: self._show_strongs_context_menu(e, str(c))
-        )
-        self.reader.tag_bind(
-            tag,
-            "<Enter>",
-            lambda e, t=tag, c=code: (
-                self.reader.config(cursor="hand2"),
-                self.reader.tag_configure(
-                    t,
-                    foreground="blue",
-                    underline=1,
-                    background="#eef6ff"
-                ),
-                self._show_strongs_tooltip(e, str(c))
-            )
-        )
-        self.reader.tag_bind(
-            tag,
-            "<Leave>",
-            lambda e, t=tag: (
-                self.reader.config(cursor="xterm"),
-                self.reader.tag_configure(
-                    t,
-                    foreground="blue",
-                    underline=1,
-                    background=""
-                ),
-                self._hide_strongs_tooltip()
-            )
-        )
 
 
     def _insert_clickable_words(self, text: str, strongs_blob: str, verse=None):
@@ -1405,10 +1482,12 @@ class UltimateBibleApp:
 
     def refresh_compare_panel(self):
         self.compare_output.delete("1.0", "end")
+
         book = self.normalize_current_book()
         chapter = int(self.chapter_var.get())
         verse = int(self.verse_var.get())
         current = self.translation_var.get().strip().lower()
+
         seen = set()
         for tr in [current, "esv", "kjv", "web"]:
             if tr in seen:
@@ -1417,7 +1496,12 @@ class UltimateBibleApp:
 
             row = None
             for candidate_book in self._candidate_book_names_for_lookup(book):
-                row = self.db.get_verse(str(tr).strip().lower(), candidate_book, chapter, verse)
+                row = self.db.get_verse(
+                    str(tr).strip().lower(),
+                    candidate_book,
+                    chapter,
+                    verse,
+                )
                 if row:
                     break
 
@@ -2206,6 +2290,7 @@ class UltimateBibleApp:
 
         engine_mode = getattr(self.semantic_engine, "mode", "semantic")
         self.search_results.insert("end", f"Semantic engine mode: {engine_mode}\n\n")
+
         for idx, hit in enumerate(hits):
             verse_obj = getattr(hit, "verse", None)
             if verse_obj is not None:
@@ -2218,6 +2303,38 @@ class UltimateBibleApp:
                 translation = "N/A"
 
             score = getattr(hit, "score", None)
+
+            clickable_label = f"{ref} [{translation}]"
+            start = self.search_results.index("end-1c")
+            self.search_results.insert("end", clickable_label)
+            end = self.search_results.index("end-1c")
+
+            if verse_obj is not None:
+                tag = f"search_ref_{idx}"
+                self.search_results.tag_add(tag, start, end)
+                self.search_results.tag_configure(tag, foreground="#1a73e8", underline=1)
+                self.search_results.tag_bind(
+                    tag,
+                    "<Button-1>",
+                    lambda e, h=hit: self._handle_semantic_click(e, h)
+                )
+                self.search_results.tag_bind(
+                    tag,
+                    "<Enter>",
+                    lambda e, h=hit: (
+                        self.search_results.config(cursor="hand2"),
+                        self._show_semantic_result_tooltip(e, h)
+                    )
+                )
+                self.search_results.tag_bind(
+                    tag,
+                    "<Leave>",
+                    lambda e: (
+                        self.search_results.config(cursor="xterm"),
+                        self._hide_semantic_result_tooltip()
+                    )
+                )
+
             if score is not None:
                 header = f"{ref} [{translation}]  score={score:.3f}"
             else:
@@ -2229,7 +2346,6 @@ class UltimateBibleApp:
             tag = f"search_ref_{idx}"
             self.search_results.tag_add(tag, start, end)
             self.search_results.tag_config(tag, foreground="#1a73e8", underline=True)
-            self.search_results.tag_bind(tag, "<Button-1>", lambda e, h=hit: self._open_semantic_hit_in_reader(h))
             self.search_results.tag_bind(tag, "<Enter>", lambda e: self.search_results.config(cursor="hand2"))
             self.search_results.tag_bind(tag, "<Leave>", lambda e: self.search_results.config(cursor="xterm"))
 
@@ -2239,6 +2355,197 @@ class UltimateBibleApp:
                 self.search_results.insert("end", "\n")
 
         self.status_var.set(f"Semantic search complete: {len(hits)} results ({engine_mode})")
+
+
+    def _toggle_semantic_preview(self, verse_obj):
+        key = (
+            verse_obj.translation.lower(),
+            verse_obj.book.lower(),
+            int(verse_obj.chapter),
+            int(verse_obj.verse),
+        )
+
+        if key in self._semantic_preview_collapsed:
+            self._semantic_preview_collapsed.remove(key)
+        else:
+            self._semantic_preview_collapsed.add(key)
+
+        self._render_semantic_preview_stack()
+
+
+    def _render_semantic_preview_stack(self):
+        if not hasattr(self, "commentary_output"):
+            return
+
+        w = self.commentary_output
+        w.delete("1.0", "end")
+
+        if not self._semantic_preview_stack:
+            w.insert("end", "No semantic previews yet.\n")
+            return
+
+        w.insert("end", "Semantic Preview Stack\n\n")
+        w.tag_configure("semantic_stack_title", font=("TkDefaultFont", 10, "bold"))
+        w.tag_add("semantic_stack_title", "1.0", "1.end")
+
+        for idx, verse_obj in enumerate(self._semantic_preview_stack, start=1):
+            key = (
+                verse_obj.translation.lower(),
+                verse_obj.book.lower(),
+                int(verse_obj.chapter),
+                int(verse_obj.verse),
+            )
+            collapsed = key in self._semantic_preview_collapsed
+            marker = "▶" if collapsed else "▼"
+
+            ref = pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)
+            clickable_label = f"{idx}. {marker} {ref} [{verse_obj.translation.upper()}]"
+            remove_label = "   [remove]"
+
+            # clickable verse ref
+            ref_tag = f"semantic_preview_ref_{idx}_{verse_obj.book}_{verse_obj.chapter}_{verse_obj.verse}"
+            ref_start = w.index("end-1c")
+            w.insert("end", clickable_label)
+            ref_end = f"{ref_start}+{len(clickable_label)}c"
+
+            w.tag_add(ref_tag, ref_start, ref_end)
+            w.tag_configure(
+                ref_tag,
+                foreground="#1a73e8",
+                underline=1,
+                font=("TkDefaultFont", 10, "bold"),
+            )
+            w.tag_bind(ref_tag, "<Button-1>", lambda e, v=verse_obj: self._toggle_semantic_preview(v))
+            w.tag_bind(ref_tag, "<Enter>", lambda e: w.config(cursor="hand2"))
+            w.tag_bind(ref_tag, "<Leave>", lambda e: w.config(cursor="xterm"))
+            w.tag_raise(ref_tag)
+
+            # clickable remove
+            remove_tag = f"semantic_preview_remove_{idx}"
+            remove_start = w.index("end-1c")
+            w.insert("end", remove_label)
+            remove_end = f"{remove_start}+{len(remove_label)}c"
+
+            w.tag_add(remove_tag, remove_start, remove_end)
+            w.tag_configure(remove_tag, foreground="#b00020", underline=1)
+            w.tag_bind(remove_tag, "<Button-1>", lambda e, i=idx - 1: self._remove_semantic_preview_at(i))
+            w.tag_bind(remove_tag, "<Enter>", lambda e: w.config(cursor="hand2"))
+            w.tag_bind(remove_tag, "<Leave>", lambda e: w.config(cursor="xterm"))
+            w.tag_raise(remove_tag)
+
+            # end header line
+            w.insert("end", "\n")
+
+            # body
+            if not collapsed:
+                w.insert("end", self.sanitize_display_text(verse_obj.text or ""))
+                w.insert("end", "\n\n")
+            else:
+                w.insert("end", "\n")
+
+            # divider between items
+            if idx < len(self._semantic_preview_stack):
+                w.insert("end", self._semantic_preview_divider())
+                w.insert("end", "\n\n")
+
+        # clear all
+        clear_tag = "semantic_preview_clear_all"
+        clear_label = "[Clear all semantic previews]"
+        clear_start = w.index("end-1c")
+        w.insert("end", clear_label)
+        clear_end = f"{clear_start}+{len(clear_label)}c"
+
+        w.tag_add(clear_tag, clear_start, clear_end)
+        w.tag_configure(
+            clear_tag,
+            foreground="#b00020",
+            underline=1,
+            font=("TkDefaultFont", 10, "bold"),
+        )
+        w.tag_bind(clear_tag, "<Button-1>", lambda e: self._clear_semantic_preview_stack())
+        w.tag_bind(clear_tag, "<Enter>", lambda e: w.config(cursor="hand2"))
+        w.tag_bind(clear_tag, "<Leave>", lambda e: w.config(cursor="xterm"))
+        w.tag_raise(clear_tag)
+
+        w.insert("end", "\n\nTip: Click a blue reference above to expand/collapse it.\n")
+
+    def _semantic_preview_divider(self) -> str:
+        try:
+            widget = self.commentary_output
+            pixel_width = max(widget.winfo_width(), 200)
+            avg_char_px = 8
+            chars = max(20, min(120, (pixel_width // avg_char_px) - 4))
+            return "  " + ("─" * max(16, chars - 4)) + "  "
+        except Exception:
+            return "─" * 56
+
+    def _open_semantic_preview_verse(self, verse_obj):
+        try:
+            self.book_var.set(verse_obj.book)
+            self.chapter_var.set(verse_obj.chapter)
+            self.verse_var.set(verse_obj.verse)
+            self.translation_var.set(verse_obj.translation)
+            self.display_current_verse()
+        except Exception as exc:
+            try:
+                messagebox.showerror("Semantic Preview", f"Could not open verse:\n\n{exc}")
+            except Exception:
+                pass
+
+    def _preview_semantic_hit(self, hit):
+        verse_obj = getattr(hit, "verse", None)
+        if verse_obj is None:
+            return
+
+        key = (
+            verse_obj.translation.lower(),
+            verse_obj.book.lower(),
+            int(verse_obj.chapter),
+            int(verse_obj.verse),
+        )
+
+        existing_keys = {
+            (
+                v.translation.lower(),
+                v.book.lower(),
+                int(v.chapter),
+                int(v.verse),
+            )
+            for v in self._semantic_preview_stack
+        }
+
+        if key not in existing_keys:
+            self._semantic_preview_stack.append(verse_obj)
+
+        try:
+            self.right_notebook.select(self.commentary_tab)
+        except Exception:
+            pass
+
+        self._render_semantic_preview_stack()
+        self.status_var.set(
+            f"Previewed {pretty_ref(verse_obj.book, verse_obj.chapter, verse_obj.verse)}"
+        )
+
+
+    def _handle_semantic_click(self, event, hit):
+        print("DEBUG semantic click state: ", event.state)
+        try:
+            self._hide_semantic_result_tooltip()
+        except Exception:
+            pass
+
+        verse_obj = getattr(hit, "verse", None)
+        if verse_obj is None:
+            return
+
+        # Shift+click only -> open in reader
+        if (event.state & 0x0001) != 0:
+            self._open_semantic_hit_in_reader(hit)
+            return
+
+        # Normal click -> preview stack only
+        self._preview_semantic_hit(hit)
 
     def _run_semantic_search_threaded(self, query: str):
         token = next(self._semantic_search_counter)
@@ -2298,6 +2605,7 @@ class UltimateBibleApp:
         self._run_semantic_search_threaded(query)
 
     def _open_semantic_hit_in_reader(self, hit):
+        self._hide_semantic_result_tooltip()
         try:
             verse_obj = getattr(hit, "verse", None)
             if verse_obj is None:
