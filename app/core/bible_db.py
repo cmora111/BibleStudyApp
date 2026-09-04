@@ -184,33 +184,34 @@ class BibleDB:
                 entry.strongs_id.upper(),
                 entry.lemma,
                 entry.transliteration,
+                entry.definition,
                 entry.language,
                 entry.gloss,
-                entry.definition,
             )
             for entry in entries
         ]
 
-        self.conn.executemany(
-            """
-            INSERT OR REPLACE INTO strongs
-            (strongs_id, lemma, transliteration, language, gloss, definition)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
-        self.conn.commit()
-        return len(rows)
+        if not rows:
+            return 0
 
-        self.conn.executemany(
-            """
-            INSERT OR REPLACE INTO strongs
-            (strongs_id, lemma, transliteration, language, gloss, definition)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            rows,
-        )
-        self.conn.commit()
+        with self._write_lock:
+            self.conn.executemany(
+                """
+                INSERT INTO strongs_lexicon
+                (strongs_id, lemma, transliteration, definition, language, gloss)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(strongs_id)
+                DO UPDATE SET
+                    lemma=excluded.lemma,
+                    transliteration=excluded.transliteration,
+                    definition=excluded.definition,
+                    language=excluded.language,
+                    gloss=excluded.gloss
+                """,
+                rows,
+            )
+            self.conn.commit()
+
         return len(rows)
 
     def get_strongs_entry(self, strongs_id: str) -> StrongsEntry | None:
