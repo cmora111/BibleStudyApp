@@ -305,9 +305,41 @@ class UltimateBibleApp:
         ttk.Button(topbar, text="Go", command=self.display_current_verse).pack(side="left", padx=(0, 6))
         ttk.Button(topbar, text="Read Chapter", command=self.read_current_chapter).pack(side="left")
 
-        self.reader = tk.Text(frame, wrap="word", font=("TkDefaultFont", 11))
-        self.reader.pack(fill="both", expand=True, padx=6, pady=6)
-        ttk.Label(frame, text="Tip: blue underlined words have Strong's links. Click one to open a word study.").pack(anchor="w", padx=6, pady=(0, 6))
+        # Bible Reader text area with vertical scrollbar
+        reader_frame = ttk.Frame(frame)
+        reader_frame.pack(fill="both", expand=True, padx=6, pady=6)
+
+        self.reader = tk.Text(
+            reader_frame,
+            wrap="word",
+            font=("TkDefaultFont", 11),
+        )
+
+        reader_scrollbar = ttk.Scrollbar(
+            reader_frame,
+            orient="vertical",
+            command=self.reader.yview,
+        )
+
+        self.reader.configure(
+            yscrollcommand=reader_scrollbar.set
+        )
+
+        reader_scrollbar.pack(
+            side="right",
+            fill="y"
+        )
+
+        self.reader.pack(
+            side="left",
+            fill="both",
+            expand=True
+        )
+
+        ttk.Label(
+            frame,
+            text="Tip: blue underlined words have Strong's links. Click one to open a word study."
+        ).pack(anchor="w", padx=6, pady=(0, 6))
 
     def build_right_panel(self, parent: ttk.Frame) -> None:
         self.right_notebook = ttk.Notebook(parent, width=320)
