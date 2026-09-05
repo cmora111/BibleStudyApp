@@ -6,6 +6,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.core.config import DB_FILE
+
 
 @dataclass(slots=True)
 class SetupReport:
@@ -14,7 +16,7 @@ class SetupReport:
 
 
 def real_db_path() -> Path:
-    return Path.home() / "UltimateBibleApp" / "data" / "bible.db"
+    return DB_FILE
 
 
 def verify_core_verses() -> list[str]:
