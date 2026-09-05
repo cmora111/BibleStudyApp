@@ -21,11 +21,14 @@ __pycache__/
 README.md
 
 # =========================
-# Local runtime database
+# Local runtime databases
 # =========================
 data/bible.db
 data/bible.db-shm
 data/bible.db-wal
+data/strongs.db
+data/strongs.db-shm
+data/strongs.db-wal
 
 # =========================
 # External / generated datasets
