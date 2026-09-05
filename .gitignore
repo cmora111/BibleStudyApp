@@ -19,3 +19,16 @@ __pycache__/
 *.pyc
 .venv/
 README.md
+
+# =========================
+# Local runtime database
+# =========================
+data/bible.db
+data/bible.db-shm
+data/bible.db-wal
+
+# =========================
+# External / generated datasets
+# =========================
+datasets/output/
+datasets/source/

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-ROOT_DIR = Path.home() / "UltimateBibleApp"
+ROOT_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT_DIR / "data"
 EXPORT_DIR = ROOT_DIR / "exports"
 CACHE_DIR = ROOT_DIR / "cache"
