@@ -669,6 +669,37 @@ class UltimateBibleApp:
 
         self.show_strongs_result_popup(code, result)
 
+    def _format_lexical_resolution(self, resolution) -> str:
+        """
+        Format a lexical resolution without collapsing source distinctions.
+        """
+        if resolution is None or not resolution.is_resolved:
+            return ""
+
+        lines = []
+
+        for group in resolution.groups:
+            if resolution.group_count > 1:
+                lines.append(f"{group.estrong}")
+                lines.append("")
+
+            for record in group.records:
+                if group.record_count > 1:
+                    lines.append(f"dStrong: {record.dstrong}")
+                    lines.append(f"uStrong: {record.ustrong}")
+
+                lines.append(f"Lemma: {record.lemma}")
+                lines.append(
+                    f"Transliteration: {record.transliteration or 'N/A'}"
+                )
+                lines.append(f"Language: {record.language}")
+                lines.append(f"Morphology: {record.morph or 'N/A'}")
+                lines.append(f"Gloss: {record.gloss or 'N/A'}")
+                lines.append(f"Definition: {record.definition}")
+                lines.append("")
+
+        return "\n".join(lines).rstrip()
+
     def show_strongs_result_popup(self, code: str, result):
         win = tk.Toplevel(self.root)
         win.title(f"Strong's {code}")
@@ -679,14 +710,23 @@ class UltimateBibleApp:
 
         lines = [f"Strong's {code}", ""]
 
-        entry = getattr(result, "entry", None)
-        if entry:
-            lines.append(f"Lemma: {getattr(entry, 'lemma', '')}")
-            lines.append(f"Transliteration: {getattr(entry, 'transliteration', '')}")
-            lines.append(f"Language: {getattr(entry, 'language', '')}")
-            lines.append(f"Gloss: {getattr(entry, 'gloss', '')}")
-            lines.append(f"Definition: {getattr(entry, 'definition', '')}")
+        resolution = getattr(result, "resolution", None)
+        lexical_text = self._format_lexical_resolution(resolution)
+
+        if lexical_text:
+            lines.append(lexical_text)
             lines.append("")
+        else:
+            entry = getattr(result, "entry", None)
+            if entry:
+                lines.append(f"Lemma: {getattr(entry, 'lemma', '')}")
+                lines.append(
+                    f"Transliteration: {getattr(entry, 'transliteration', '')}"
+                )
+                lines.append(f"Language: {getattr(entry, 'language', '')}")
+                lines.append(f"Gloss: {getattr(entry, 'gloss', '')}")
+                lines.append(f"Definition: {getattr(entry, 'definition', '')}")
+                lines.append("")
 
         linked_codes = getattr(result, "linked_codes", None)
         if linked_codes:
@@ -2883,18 +2923,48 @@ class UltimateBibleApp:
                 self.status_var.set("Strong's lookup failed")
                 return
 
-            if result.entry is None:
-                self.commentary_output.insert("end", f"No Strong's entry found for {normalized}.\n")
+            resolution = getattr(result, "resolution", None)
+            lexical_text = self._format_lexical_resolution(resolution)
+
+            matching_words = [w for w, c in word_map if c.upper() == normalized]
+            if matching_words:
+                self.commentary_output.insert(
+                    "end",
+                    f"Word(s): {', '.join(sorted(set(matching_words)))}\n",
+                )
+
+            if lexical_text:
+                self.commentary_output.insert("end", f"{lexical_text}\n\n")
             else:
-                entry = result.entry
-                matching_words = [w for w, c in word_map if c.upper() == normalized]
-                if matching_words:
-                    self.commentary_output.insert("end", f"Word(s): {', '.join(sorted(set(matching_words)))}\n")
-                self.commentary_output.insert("end", f"{entry.strongs_id} — {entry.lemma}\n")
-                self.commentary_output.insert("end", f"Transliteration: {entry.transliteration or 'N/A'}\n")
-                self.commentary_output.insert("end", f"Language: {entry.language}\n")
-                self.commentary_output.insert("end", f"Gloss: {entry.gloss or 'N/A'}\n\n")
-                self.commentary_output.insert("end", f"Definition\n{entry.definition}\n\n")
+                entry = getattr(result, "entry", None)
+                if entry:
+                    self.commentary_output.insert(
+                        "end",
+                        f"{entry.strongs_id} — {entry.lemma}\n",
+                    )
+                    self.commentary_output.insert(
+                        "end",
+                        f"Transliteration: {entry.transliteration or 'N/A'}\n",
+                    )
+                    self.commentary_output.insert(
+                        "end",
+                        f"Language: {entry.language}\n",
+                    )
+                    self.commentary_output.insert(
+                        "end",
+                        f"Gloss: {entry.gloss or 'N/A'}\n\n",
+                    )
+                    self.commentary_output.insert(
+                        "end",
+                        f"Definition\n{entry.definition}\n\n",
+                    )
+                else:
+                    self.commentary_output.insert(
+                        "end",
+                        f"No Strong's entry found for {normalized}.\n",
+                    )
+
+            if lexical_text or getattr(result, "entry", None):
                 self.commentary_output.insert("end", "Occurrences\n")
                 for occ in getattr(result, "occurrences", []) or []:
                     self.commentary_output.insert("end", f"- {occ}\n")
