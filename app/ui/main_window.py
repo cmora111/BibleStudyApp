@@ -14,7 +14,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import numpy
 
 from app.core.bible_db import BibleDB
-from app.core.config import DB_FILE
+from app.core.config import DB_FILE, LEXICON_DB_FILE
+from app.core.lexical_resolver import LexicalResolver
 from app.core.importers import parse_bible_file, parse_bible_folder, parse_strongs_file
 from app.core.utils import pretty_ref
 from app.engines.commentary import CommentaryEngine
@@ -43,6 +44,7 @@ class UltimateBibleApp:
         self.root.geometry("1260x820")
 
         self.db = BibleDB()
+        self.lexical_resolver = LexicalResolver(LEXICON_DB_FILE)
         self.topic_engine = TopicEngine()
         self.commentary_engine = CommentaryEngine()
         self.graph_engine = KnowledgeGraphEngine()
@@ -184,7 +186,11 @@ class UltimateBibleApp:
         translation = (self.translation_var.get() or "").strip().lower()
         if self.strongs_engine is None:
             self.status_var.set(f"Loading Strong's engine for {translation.upper()}...")
-            self.strongs_engine = StrongsWordStudyEngine(self.db, translation=translation)
+            self.strongs_engine = StrongsWordStudyEngine(
+                self.db,
+                translation=translation,
+                lexical_resolver=self.lexical_resolver,
+            )
         return self.strongs_engine
 
     def _ensure_study_assistant(self):
