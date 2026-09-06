@@ -18,6 +18,7 @@ from app.core.config import DB_FILE, LEXICON_DB_FILE
 from app.core.lexical_resolver import LexicalResolver
 from app.core.importers import parse_bible_file, parse_bible_folder, parse_strongs_file
 from app.core.utils import pretty_ref
+from app.core.step_display import step_plain_text
 from app.engines.commentary import CommentaryEngine
 from app.engines.knowledge_graph import KnowledgeGraphEngine
 from app.engines.semantic_search import SemanticSearchEngine
@@ -695,7 +696,7 @@ class UltimateBibleApp:
                 lines.append(f"Language: {record.language}")
                 lines.append(f"Morphology: {record.morph or 'N/A'}")
                 lines.append(f"Gloss: {record.gloss or 'N/A'}")
-                lines.append(f"Definition: {record.definition}")
+                lines.append(f"Definition: {step_plain_text(record.definition)}")
                 lines.append("")
 
         return "\n".join(lines).rstrip()
