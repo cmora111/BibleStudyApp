@@ -1,7 +1,7 @@
 # TTESV Alignment Evidence Contract Investigation
 
 **Status:** Hold
-**Version:** 0.3.0
+**Version:** 0.4.0
 
 No production alignment data may be regenerated from this investigation
 until the complete supported application relationship and required
@@ -779,15 +779,15 @@ The Anvil further established:
 > independently recoverable, but it may not silently discard part of the
 > affirmative relationship it purports to materialize.**
 
-The present `verse_token_tags` schema identifies one token occurrence through
-its primary key and provides one scalar `strongs_id` for that occurrence.
-Because TTESV can preserve multiple lexical relationships for a source
-assertion, it has not yet been established that the present physical schema can
-faithfully materialize every complete supported application relationship.
+The Genesis 1:4 cardinality witness establishes that one supported target token
+occurrence can participate in one relationship with multiple lexical
+participants. The present scalar physical `verse_token_tags` schema therefore
+cannot faithfully materialize every complete supported application
+relationship.
 
-This finding does not authorize modification of the schema. It establishes a
-constraint that the application-cache representation must satisfy before its
-physical form can be determined.
+This finding does not authorize modification of the schema. The stronger
+question of whether the atomic token-to-lexical association model is itself
+insufficient remains unresolved and is the next bounded investigation.
 
 ---
 
@@ -954,24 +954,141 @@ And:
 > independently recoverable, but it may not silently discard part of the
 > affirmative relationship it purports to materialize.
 
-The present physical `verse_token_tags` schema has not yet been established
+The present physical `verse_token_tags` schema had not yet been established
 as capable of representing every complete supported application relationship.
-That question remains unresolved and does not authorize a schema change.
+The bounded cardinality experiment below subsequently resolves that specific
+uncertainty for the present scalar physical schema. It does not establish that
+the atomic token-to-lexical relationship model is itself insufficient.
+
+---
+
+# Genesis 1:4 Cardinality Witness
+
+The next bounded experiment tested the smallest discriminator capable of
+resolving the physical scalar-schema question:
+
+> Does at least one sufficiently established supported application relationship
+> contain one target occurrence and multiple lexical participants?
+
+The TTESV source documentation establishes that two-digit LHS numbers identify
+ESV 2011 word positions and that `+` indicates more than one English word is
+tagged or more than one Hebrew/Greek word is tagged to it.
+
+The producer documentation itself supplies Genesis 1:4 as an explanatory
+example. It states that the ESV word `separated` is tagged by both `<00914>` and
+`<00996>` because there is no separate English word representing `<00996>`.
+
+The TTESV source assertion for Genesis 1:4 preserves:
+
+```text
+11=<00914>+<00996>
+```
+
+Under the established ordinary RHS convention, the lexical participants
+normalize without an additional material interpretive choice to:
+
+```text
+<00914> -> H914
+<00996> -> H996
+```
+
+The retained application ESV witness contains Genesis 1:4 as:
+
+```text
+And God saw that the light was good. And God separated the light from the
+ darkness.
+```
+
+Under the bounded whitespace projection used for this witness, the target
+occurrences are:
+
+```text
+ 9: And
+10: God
+11: separated
+12: the
+13: light
+14: from
+15: the
+16: darkness.
+```
+
+The source mapping, producer explanation, and target projection therefore
+converge on one target occurrence participating in one alignment relationship
+with two lexical participants:
+
+```text
+Genesis 1:4 / position 11 / separated
+                    |
+                    v
+          ALIGNMENT RELATIONSHIP
+             /             \
+          H914             H996
+```
+
+This witness establishes the cardinality proposition required by the bounded
+physical-schema test:
+
+> **A complete supported application relationship can contain one target token
+> occurrence and multiple lexical participants.**
+
+The present `verse_token_tags` primary key identifies one target token
+occurrence, while the row provides one scalar `strongs_id`. The present
+physical schema therefore cannot faithfully materialize this Genesis 1:4
+relationship as a complete affirmative relationship without omitting an
+established lexical participant or changing the semantics of the existing
+scalar representation.
+
+The bounded result is:
+
+> **The present scalar physical `verse_token_tags` schema is insufficient to
+> faithfully materialize every complete supported application relationship.**
+
+This result does not establish that an atomic token-to-lexical association model
+is itself insufficient. A representation capable of preserving multiple
+lexical associations for one target occurrence could potentially represent this
+1:N witness without relational loss.
+
+Therefore:
+
+> **Physical scalar-schema insufficiency != atomic relationship-model
+> insufficiency.**
+
+The installed historical `verse_token_tags` rows for Genesis 1:4 are not used
+to establish this relationship. Those rows exhibit the previously established
+historical importer defects, including punctuation-induced token drift and
+forced Greek lexical identity. The cardinality result stands on the TTESV
+source assertion, its producer documentation, the established RHS convention,
+and the bounded target projection.
+
+This finding does not authorize modification of the schema or regeneration of
+production alignment data.
 
 ---
 
 # Next Bounded Question
 
-The minimum alignment representation has survived Forge and Anvil inspection.
+The cardinality test has established that the present scalar physical
+`verse_token_tags` schema is insufficient for at least one complete supported
+1:N application relationship.
 
-The next bounded question exposed by the Anvil is:
+The stronger relationship-model question remains unresolved:
 
-> What constitutes a complete supported application relationship, and what
-> cardinality must the application-cache representation preserve?
+> Does TTESV produce at least one sufficiently established supported
+> multi-target/multi-lexical application relationship whose topology cannot be
+> faithfully represented as independent token-to-lexical associations?
 
-That question must be answered before determining whether the present physical
-`verse_token_tags` schema can faithfully materialize the supported
-relationships.
+This is a topology test, not another scalar-cardinality test. A decisive witness
+must preserve the source relationship grouping and must not infer pairwise
+correspondence merely from co-participation.
+
+Therefore:
+
+> Relationship membership != pairwise correspondence.
+
+> Participant cardinality != correspondence cardinality.
+
+> Physical schema insufficiency != atomic relationship-model insufficiency.
 
 The question does not authorize modification of the schema.
 
@@ -985,7 +1102,7 @@ bounded engineering decision.
 | Field | Value |
 |---|---|
 | Status | Hold |
-| Version | 0.3.0 |
+| Version | 0.4.0 |
 
 
 The TTESV Alignment Evidence Contract Investigation memorializes the
@@ -998,9 +1115,12 @@ survived Anvil inspection.
 
 The minimum alignment representation has survived Forge and Anvil inspection.
 
-The investigation remains on Hold because the complete supported application
-relationship and the cardinality required of the application-cache
-representation have not yet been established.
+The investigation remains on Hold. Genesis 1:4 establishes that the present
+scalar physical `verse_token_tags` schema cannot faithfully materialize every
+complete supported application relationship because a supported target
+occurrence may participate with multiple lexical identifiers. The stronger
+question of whether the atomic token-to-lexical association model can preserve
+all required relational topology remains unresolved.
 
 Production alignment regeneration remains on Hold.
 
@@ -1041,6 +1161,9 @@ physical form can be determined.
 | 0.3.0 | Hold | Added Anvil refinements concerning projection |
 | | | standing and complete application-cache relationship |
 | | | cardinality. |
+| 0.4.0 | Hold | Established the Genesis 1:4 supported 1:N cardinality |
+| | | witness and physical scalar-schema insufficiency; separated |
+| | | that result from the unresolved atomic topology question. |
 
 
 ---
