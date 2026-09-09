@@ -1,11 +1,11 @@
 # TTESV Alignment Evidence Contract Investigation
 
 **Status:** Hold
-**Version:** 0.4.0
+**Version:** 0.5.0
 
 No production alignment data may be regenerated from this investigation
-until the complete supported application relationship and required
-application-cache cardinality have been established and verified.
+until a concrete application-alignment representation satisfying the established
+minimum representational capability has been established and verified.
 
 ---
 
@@ -850,8 +850,8 @@ No SQL schema is authorized by this finding.
 
 # Engineering HOLD
 
-Until the complete supported application relationship and required
-application-cache cardinality have been established and verified, the
+Until a concrete application-alignment representation satisfying the
+established minimum capability has been established and verified, the
 following remain unauthorized:
 
 - regeneration of production `verse_token_tags`;
@@ -909,25 +909,37 @@ No such blocker has presently been demonstrated.
 
 # Current Anvil Result
 
-The distinction among authoritative evidence, reproducibly derived assertions,
+The distinction among authoritative evidence, established derivations,
 supported application relationships, and disposable application caches
 survived Anvil inspection.
 
-The Anvil refined the authoritative-boundary formulation by establishing that
-deterministic reproducibility alone is insufficient. The transformation relied
-upon by a derived assertion must itself possess sufficient applicable standing.
+Genesis 1:4 establishes that one supported target occurrence can participate
+in one relationship with multiple lexical participants. The present scalar
+physical `verse_token_tags` schema is therefore insufficient as a universal
+materialization.
 
-The following statements currently survive:
+Genesis 1:2 establishes that multiple target occurrences can jointly
+participate in one lexical relationship where independent token-level
+decomposition would increase relational specificity. The independent
+token-to-lexical association model is therefore insufficient as a universal
+representation of complete supported TTESV relationships.
 
-> Source assertion ≠ interpretation ≠ projection result ≠ causal explanation.
+The Anvil further refined the minimum application-alignment capability by
+requiring reconstruction through transformations whose applicable standing is
+established. Deterministic reproducibility alone remains insufficient.
 
-> Reconstructing a value ≠ reconstructing its evidentiary standing.
+The following statements survive:
+
+> Source assertion != interpretation != projection result != causal
+> explanation.
+
+> Reconstructing a value != reconstructing its evidentiary standing.
 
 > Persistence does not confer evidentiary authority.
 
 > Derivability does not require materialization.
 
-> Representational necessity ≠ persistence necessity.
+> Representational necessity != persistence necessity.
 
 > Authority is relative to the proposition for which evidence is offered; it
 > is not an intrinsic property conferred by storage.
@@ -937,28 +949,33 @@ The following statements currently survive:
 > A cache may discard evidentiary detail only when that detail survives
 > independently upstream.
 
-The conceptual evidence contract therefore survives.
-
-The minimum alignment representation also survived Anvil inspection.
-
-The Anvil established two additional constraints:
-
 > Projection success does not constitute evidentiary support unless the
 > criterion establishing support has itself acquired sufficient standing. A
 > comparison result inherits the standing of the relationships required to
 > produce it.
 
-And:
-
 > A disposable application cache may omit upstream provenance that remains
 > independently recoverable, but it may not silently discard part of the
 > affirmative relationship it purports to materialize.
 
-The present physical `verse_token_tags` schema had not yet been established
-as capable of representing every complete supported application relationship.
-The bounded cardinality experiment below subsequently resolves that specific
-uncertainty for the present scalar physical schema. It does not establish that
-the atomic token-to-lexical relationship model is itself insufficient.
+> Complete participant preservation != complete relationship preservation.
+
+> Increasing field cardinality does not repair missing relationship topology.
+
+> Physical decomposition != semantic decomposition.
+
+> Row multiplicity != evidentiary independence.
+
+> A representation may physically decompose a relationship only when the
+> complete supported relationship remains recoverable without making a new
+> evidentiary or interpretive determination.
+
+The minimum-capability result is Anvil-surviving.
+
+The evidence establishes required relational semantics but does not establish a
+replacement physical schema.
+
+Production alignment regeneration therefore remains on Hold.
 
 ---
 
@@ -1066,31 +1083,234 @@ production alignment data.
 
 ---
 
-# Next Bounded Question
+# Genesis 1:2 Relational Topology Witness
 
-The cardinality test has established that the present scalar physical
-`verse_token_tags` schema is insufficient for at least one complete supported
-1:N application relationship.
+The Genesis 1:4 witness established scalar physical-schema insufficiency. It
+did not establish whether independent token-to-lexical associations are
+universally sufficient as the underlying relationship model.
 
-The stronger relationship-model question remains unresolved:
+The next bounded experiment therefore tested relational topology.
 
-> Does TTESV produce at least one sufficiently established supported
-> multi-target/multi-lexical application relationship whose topology cannot be
-> faithfully represented as independent token-to-lexical associations?
+The initial discriminator asked for a supported multi-target/multi-lexical
+relationship whose topology could not be faithfully decomposed into independent
+token-to-lexical associations.
 
-This is a topology test, not another scalar-cardinality test. A decisive witness
-must preserve the source relationship grouping and must not infer pairwise
-correspondence merely from co-participation.
+Inspection of the TTESV producer documentation exposed that this formulation
+was unnecessarily restrictive. Non-decomposable topology does not require
+multiplicity on both sides of the relationship.
+
+The producer documentation states that sometimes two adjacent English words
+must be tagged together and supplies Genesis 1:2 as the explanatory example.
+It states that `<08414>` is tagged by `without form` because either English
+word individually would be misleading.
+
+The exact TTESV source assertion is:
+
+```text
+04+05=<08414>
+```
+
+Under the established ordinary RHS convention:
+
+```text
+<08414> -> H8414
+```
+
+The retained application ESV witness contains the relevant target sequence:
+
+```text
+ 1: The
+ 2: earth
+ 3: was
+ 4: without
+ 5: form
+ 6: and
+ 7: void,
+```
+
+The source assertion, producer explanation, and bounded target projection
+therefore converge on:
+
+```text
+Genesis 1:2
+
+target participants
+    position 4: without
+    position 5: form
+          \       /
+           \     /
+            \   /
+             \ /
+      ALIGNMENT RELATIONSHIP
+               |
+               v
+             H8414
+```
+
+The decisive feature is not merely that two target participants exist. The
+producer explicitly explains that either English word individually would be
+misleading.
+
+The evidence therefore establishes the joint relationship:
+
+```text
+{without, form} <-> H8414
+```
+
+It does not license replacement of that relationship with independently
+affirmative assertions equivalent to:
+
+```text
+without <-> H8414
+form    <-> H8414
+```
+
+Such decomposition would convert co-participation in one established
+relationship into independently affirmative token-to-lexical relationships.
 
 Therefore:
 
-> Relationship membership != pairwise correspondence.
+> **Complete participant preservation != complete relationship preservation.**
 
-> Participant cardinality != correspondence cardinality.
+And:
 
-> Physical schema insufficiency != atomic relationship-model insufficiency.
+> **If decomposition converts a jointly established relationship into
+> independently affirmative relationships, decomposition increases relational
+> specificity.**
 
-The question does not authorize modification of the schema.
+Genesis 1:2 establishes that a relationship may be non-decomposable even when
+multiplicity occurs on only one side.
+
+The bounded result is:
+
+> **An independent token-to-lexical association model is insufficient as a
+> universal representation of complete supported TTESV application
+> relationships.**
+
+This does not prohibit separate physical records for relationship participants.
+Separate records may be used where their semantics preserve, or recoverably
+reference, the common relationship and do not convert relationship membership
+into independent correspondence.
+
+Therefore:
+
+> **Physical decomposition != semantic decomposition.**
+
+> **Row multiplicity != evidentiary independence.**
+
+The current `verse_token_tags` representation has no mechanism, under its
+present token-level association semantics, to preserve that positions 4 and 5
+jointly participate in one relationship to H8414.
+
+Genesis 1:2 therefore establishes a topology deficiency distinct from the
+Genesis 1:4 scalar-cardinality deficiency.
+
+This finding does not authorize a replacement schema or production alignment
+regeneration.
+
+---
+
+# Minimum Application-Alignment Capability
+
+The Genesis 1:4 and Genesis 1:2 witnesses establish independent constraints on
+any application-alignment representation.
+
+Genesis 1:4 requires independently variable lexical-side cardinality:
+
+```text
+R1
+target participants  = {separated}
+lexical participants = {H914, H996}
+```
+
+Genesis 1:2 requires recoverable target-side grouping:
+
+```text
+R2
+target participants  = {without, form}
+lexical participants = {H8414}
+```
+
+Preserving all constituent values is not sufficient when their established
+relational structure is lost.
+
+The Forge established the following minimum capability, and the Anvil passed it
+with refinement:
+
+> **The minimum application-alignment capability is the ability to preserve, or
+> reconstruct through transformations whose applicable standing is established,
+> each complete supported relationship as the finest affirmative relational
+> unit established by the evidentiary chain, with independently variable target
+> and lexical participant cardinality, recoverable relationship grouping, and
+> every internal correspondence actually established by that chain, while
+> adding no participant, correspondence, independence, specificity, grouping,
+> or certainty not established by the evidence.**
+
+Target participants must remain identifiable as occurrences within an
+identified projection of an identified target witness.
+
+Lexical participants must remain at the specificity established by the
+alignment evidence rather than specificity introduced by subsequent lexical
+resolution.
+
+The following constraints survive Forge and Anvil inspection:
+
+> **A valid representation must preserve relational structure, not merely all
+> constituent values.**
+
+> **Increasing field cardinality does not repair missing relationship
+> topology.**
+
+> **A relationship may be non-decomposable even when multiplicity exists on
+> only one side.**
+
+> **Finest affirmative relational unit != smallest number of participants.**
+
+> **Established relational semantics != required physical schema.**
+
+> **A representation may physically decompose a relationship only when the
+> complete supported relationship remains recoverable without making a new
+> evidentiary or interpretive determination.**
+
+A richer scalar field alone is therefore insufficient. Allowing multiple
+Strong's identifiers per target occurrence could represent the Genesis 1:4
+lexical cardinality but would not preserve the joint target relationship
+established by Genesis 1:2.
+
+The evidence establishes the semantic capability required of the eventual
+representation. It does not establish whether that capability should be
+implemented through database relationship records, membership records,
+structured derived files, references to an upstream relationship model, or
+another physical design.
+
+The existing `verse_token_tags` concept may still have value as a disposable
+application cache. Its failure as a universal self-sufficient representation
+does not establish that it must be deleted.
+
+---
+
+# Next Bounded Question
+
+The scalar-cardinality and independent-association questions are now resolved.
+
+Genesis 1:4 establishes that the present scalar physical `verse_token_tags`
+schema cannot faithfully materialize every complete supported relationship.
+
+Genesis 1:2 establishes that independent token-to-lexical associations cannot
+universally preserve every complete supported relationship.
+
+The next bounded engineering question is:
+
+> **What concrete derived representation can satisfy the established minimum
+> application-alignment capability while remaining reconstructable through
+> transformations whose applicable standing is established and suitable for
+> the application's runtime requirements?**
+
+This is an architecture question constrained by the evidence contract.
+
+It does not authorize production regeneration, database migration, or selection
+of a replacement physical schema before the candidate representation has been
+established and verified.
 
 No deeper dependency is to be pursued unless it is demonstrated to block this
 bounded engineering decision.
@@ -1102,25 +1322,31 @@ bounded engineering decision.
 | Field | Value |
 |---|---|
 | Status | Hold |
-| Version | 0.4.0 |
+| Version | 0.5.0 |
 
 
 The TTESV Alignment Evidence Contract Investigation memorializes the
-project-specific evidentiary findings governing translation-token ↔
+project-specific evidentiary findings governing translation-token and
 lexical-identity alignment in the Ultimate Bible App.
 
-The findings concerning source assertion, interpretation, projection, causal
-explanation, reproducibility, and the authoritative preservation boundary have
-survived Anvil inspection.
+The evidence contract and minimum alignment representation have survived Forge
+and Anvil inspection.
 
-The minimum alignment representation has survived Forge and Anvil inspection.
+Genesis 1:4 establishes that the present scalar physical `verse_token_tags`
+schema cannot faithfully materialize every complete supported application
+relationship.
 
-The investigation remains on Hold. Genesis 1:4 establishes that the present
-scalar physical `verse_token_tags` schema cannot faithfully materialize every
-complete supported application relationship because a supported target
-occurrence may participate with multiple lexical identifiers. The stronger
-question of whether the atomic token-to-lexical association model can preserve
-all required relational topology remains unresolved.
+Genesis 1:2 establishes that independent token-to-lexical associations are not
+a universally sufficient relationship model because an established
+relationship may require multiple target occurrences to participate jointly.
+
+The minimum application-alignment capability has now survived Anvil inspection.
+The eventual representation must preserve or reconstruct, through
+transformations whose applicable standing is established, the cardinality,
+grouping, and relational topology of each complete supported relationship.
+
+The investigation remains on Hold because a concrete derived representation
+satisfying that capability has not yet been established and verified.
 
 Production alignment regeneration remains on Hold.
 
@@ -1130,22 +1356,9 @@ this investigation.
 FI-0006 remains Deferred and has not satisfied its re-entry condition through
 this investigation.
 
-The Anvil further established:
-
-> **A disposable application cache may omit upstream provenance that remains
-> independently recoverable, but it may not silently discard part of the
-> affirmative relationship it purports to materialize.**
-
-The present `verse_token_tags` schema identifies one token occurrence through
-its primary key and provides one scalar `strongs_id` for that occurrence.
-Because TTESV can preserve multiple lexical relationships for a source
-assertion, it has not yet been established that the present physical schema can
-faithfully materialize every complete supported application relationship.
-
-This finding does not authorize modification of the schema. It establishes a
-constraint that the application-cache representation must satisfy before its
-physical form can be determined.
-
+The next bounded question concerns concrete representation architecture, not
+whether the present scalar or independent-association models are universally
+sufficient.
 
 ---
 
@@ -1164,7 +1377,9 @@ physical form can be determined.
 | 0.4.0 | Hold | Established the Genesis 1:4 supported 1:N cardinality |
 | | | witness and physical scalar-schema insufficiency; separated |
 | | | that result from the unresolved atomic topology question. |
+| 0.5.0 | Hold | Established the Genesis 1:2 N:1 topology witness and |
+| | | independent-association model insufficiency; established the |
+| | | Anvil-surviving minimum application-alignment capability. |
 
 
 ---
-
