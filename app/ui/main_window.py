@@ -1178,26 +1178,37 @@ class UltimateBibleApp:
             "isamuel": "1samuel",
             "i samuel": "1samuel",
             "1 samuel": "1samuel",
+            "1Sam": "1samuel",
+            "1sam": "1samuel",
             "2samuel": "2samuel",
             "iisamuel": "2samuel",
             "ii samuel": "2samuel",
             "2 samuel": "2samuel",
+            "2Sam": "2samuel",
             "1kings": "1kings",
             "ikings": "1kings",
             "i kings": "1kings",
             "1 kings": "1kings",
+            "1Kin": "1kings",
+            "1kin": "1kings",
             "2kings": "2kings",
             "iikings": "2kings",
             "ii kings": "2kings",
             "2 kings": "2kings",
+            "2Kin": "2kings",
+            "2kin": "2kings",
             "1chronicles": "1chronicles",
             "ichronicles": "1chronicles",
             "i chronicles": "1chronicles",
             "1 chronicles": "1chronicles",
+            "1chro": "1chronicles",
+            "1Chro": "1chronicles",
             "2chronicles": "2chronicles",
             "iichronicles": "2chronicles",
             "ii chronicles": "2chronicles",
             "2 chronicles": "2chronicles",
+            "2Chro": "2chronicles",
+            "2chro": "2chronicles",
             "ezra": "ezra",
             "nehemiah": "nehemiah",
             "esther": "esther",
@@ -1240,10 +1251,14 @@ class UltimateBibleApp:
             "icorinthians": "1corinthians",
             "i corinthians": "1corinthians",
             "1 corinthians": "1corinthians",
+            "1Cor": "1corinthians",
+            "1cor": "1corinthians",
             "2corinthians": "2corinthians",
             "iicorinthians": "2corinthians",
             "ii corinthians": "2corinthians",
             "2 corinthians": "2corinthians",
+            "2Cor": "2corinthians",
+            "2cor": "2corinthians",
             "galatians": "galatians",
             "ephesians": "ephesians",
             "philippians": "philippians",
@@ -1252,18 +1267,26 @@ class UltimateBibleApp:
             "ithessalonians": "1thessalonians",
             "i thessalonians": "1thessalonians",
             "1 thessalonians": "1thessalonians",
+            "1The": "1thessalonians",
+            "1the": "1thessalonians",
             "2thessalonians": "2thessalonians",
             "iithessalonians": "2thessalonians",
             "ii thessalonians": "2thessalonians",
             "2 thessalonians": "2thessalonians",
+            "2The": "2thessalonians",
+            "2the": "2thessalonians",
             "1timothy": "1timothy",
             "itimothy": "1timothy",
             "i timothy": "1timothy",
             "1 timothy": "1timothy",
+            "1Tim": "1timothy",
+            "1tim": "1timothy",
             "2timothy": "2timothy",
             "iitimothy": "2timothy",
             "ii timothy": "2timothy",
             "2 timothy": "2timothy",
+            "2Tim": "2timothy",
+            "2tim": "2timothy",
             "titus": "titus",
             "philemon": "philemon",
             "hebrews": "hebrews",
@@ -1272,22 +1295,32 @@ class UltimateBibleApp:
             "ipeter": "1peter",
             "i peter": "1peter",
             "1 peter": "1peter",
+            "1Pet": "1peter",
+            "1pet": "1peter",
             "2peter": "2peter",
             "iipeter": "2peter",
             "ii peter": "2peter",
             "2 peter": "2peter",
+            "2Pet": "2peter",
+            "2pet": "2peter",
             "1john": "1john",
             "ijohn": "1john",
             "i john": "1john",
             "1 john": "1john",
+            "1Jon": "1john",
+            "1jon": "1john",
             "2john": "2john",
             "iijohn": "2john",
             "ii john": "2john",
             "2 john": "2john",
+            "2Jon": "2john",
+            "2jon": "2john",
             "3john": "3john",
             "iiijohn": "3john",
             "iii john": "3john",
             "3 john": "3john",
+            "3Jon": "3john",
+            "3jon": "3john",
             "jude": "jude",
             "revelation": "revelation",
             "rev": "revelation",
@@ -2539,9 +2572,44 @@ class UltimateBibleApp:
 
                 crossrefs = self._semantic_preview_crossrefs_text(verse_obj)
                 if crossrefs:
-                    w.insert("end", crossrefs + "\n\n")
-            else:
-                w.insert("end", "\n")
+                    lines = crossrefs.splitlines()
+
+                    if lines:
+                        w.insert("end", lines[0] + "\n")
+
+                    for ref_idx, ref_label in enumerate(lines[1:], start=1):
+                        clean_ref = ref_label.replace("•", "").strip()
+
+                        if not clean_ref:
+                            continue
+
+                        w.insert("end", "  • ")
+
+                        tag = f"semantic_preview_crossref_{idx}_{ref_idx}"
+
+                        w.tag_configure(
+                            tag,
+                            foreground="#1a73e8",
+                            underline=1,
+                        )
+
+                        w.tag_bind(
+                            tag,
+                            "<Button-1>",
+                            lambda e, r=clean_ref: self._open_semantic_crossref(r),
+                        )
+                        w.tag_bind(tag, "<Enter>", lambda e: w.config(cursor="hand2"))
+                        w.tag_bind(tag, "<Leave>", lambda e: w.config(cursor="xterm"))
+
+                        w.insert("end", clean_ref, (tag,))
+                        w.tag_raise(tag)
+
+                        w.insert("end", "\n")
+
+                    w.insert("end", "\n")
+                else:
+                    w.insert("end", "\n")
+
             # divider between items
             if idx < len(self._semantic_preview_stack):
                 w.insert("end", self._semantic_preview_divider())
@@ -2567,6 +2635,60 @@ class UltimateBibleApp:
         w.tag_raise(clear_tag)
 
         w.insert("end", "\n\nTip: Click a blue reference above to expand/collapse it.\n")
+
+    def _open_semantic_crossref(self, ref_label: str):
+        parsed = self.parse_reference_label(ref_label)
+
+        if not parsed:
+            self.status_var.set(f"Could not parse cross-reference: {ref_label}")
+            return
+
+        book, chapter, verse = parsed
+        translation = (self.translation_var.get() or "").strip().lower()
+
+        row = None
+
+        for candidate_book in self._candidate_book_names_for_lookup(book):
+            row = self.db.get_verse(
+                translation,
+                candidate_book,
+                chapter,
+                verse,
+            )
+            if row is not None:
+                break
+
+        if row is None:
+            self.status_var.set(
+                f"Cross-reference not found: {pretty_ref(book, chapter, verse)}"
+            )
+            return
+
+        key = (
+            row.translation.lower(),
+            row.book.lower(),
+            int(row.chapter),
+            int(row.verse),
+        )
+
+        existing_keys = {
+            (
+                v.translation.lower(),
+                v.book.lower(),
+                int(v.chapter),
+                int(v.verse),
+            )
+            for v in self._semantic_preview_stack
+        }
+
+        if key not in existing_keys:
+            self._semantic_preview_stack.append(row)
+
+        self._render_semantic_preview_stack()
+
+        self.status_var.set(
+            f"Added cross-reference {pretty_ref(row.book, row.chapter, row.verse)}"
+        )
 
     def _semantic_preview_crossrefs_text(self, verse_obj, limit: int = 8) -> str:
         try:
