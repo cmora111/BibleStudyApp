@@ -1357,13 +1357,30 @@ class UltimateBibleApp:
 
     def parse_reference_label(self, ref: str):
         ref = (ref or "").strip()
-        m = re.search(r"([1-3]?\s?[A-Za-z][A-Za-z\s]+?)\s+(\d+):(\d+)", ref)
-        if not m:
-            return None
-        try:
-            return (self.normalize_book_name(m.group(1).strip()), int(m.group(2)), int(m.group(3)))
-        except Exception:
-            return None
+
+        patterns = [
+            # Psalm 120:3
+            r"([1-3]?\s?[A-Za-z][A-Za-z\s]+?)\s+(\d+):(\d+)",
+
+            # Ps.120.3
+            r"([1-3]?\s?[A-Za-z][A-Za-z\s]*?)\.(\d+)\.(\d+)",
+        ]
+
+        for pattern in patterns:
+            m = re.search(pattern, ref)
+            if not m:
+                continue
+
+            try:
+                return (
+                    self.normalize_book_name(m.group(1).strip()),
+                    int(m.group(2)),
+                    int(m.group(3)),
+                )
+            except Exception:
+                return None
+
+        return None
 
     def _render_clickable_strongs_summary(self, tags):
         if not tags:
