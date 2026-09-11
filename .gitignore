@@ -35,3 +35,22 @@ data/strongs.db-wal
 # =========================
 datasets/output/
 datasets/source/
+
+# =========================
+# git status noise
+# =========================
+God
+app/ui/main_window_broken_2026-09-04.py
+docs/ESV Bible Translation Update _ Crossway_files/
+results/
+scripts/compare_ttesv_token_projections_v6.py
+scripts/compare_ttesv_token_spans_v7.py
+scripts/inventory_ttesv_numeric_lhs_v1.py
+scripts/inventory_ttesv_numeric_lhs_v2.py
+scripts/inventory_ttesv_numeric_lhs_v3.py
+scripts/inventory_ttesv_numeric_lhs_v4.py
+scripts/inventory_ttesv_positional_drift_v5.py
+scripts/inventory_ttesv_relationship_topology_v8.py
+scripts/validate_ttesv_alignment_v2.py
+scripts/validate_ttesv_alignment_v3.py
+
